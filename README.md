@@ -72,8 +72,11 @@ Expected CSV headers:
 
 - Frontend: Vercel free tier
 - Backend: Render free tier
+- Render Python version: 3.13.14
 
 Deployment status currently pending based on your instruction to complete account project setup after Phase 1 coding.
+
+If Render defaults to Python 3.14, keep backend/runtime.txt in place so the backend service uses Python 3.13.14 instead of compiling unsupported wheels from source.
 
 ## Phase 3 Advance Note
 
