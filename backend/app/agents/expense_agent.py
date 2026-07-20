@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -32,7 +33,7 @@ def run_expense_categorization(transactions: list[TransactionInput]) -> Categori
         google_api_key=api_key,
         temperature=0,
     )
-    chain = prompt | llm.with_structured_output(CategorizationResult)
+    chain = prompt | llm
 
     serializable_rows = [
         {
@@ -45,7 +46,19 @@ def run_expense_categorization(transactions: list[TransactionInput]) -> Categori
         for idx, txn in enumerate(transactions)
     ]
 
-    result = chain.invoke({"transactions": serializable_rows})
+    response = chain.invoke({"transactions": serializable_rows})
+    response_text = getattr(response, "content", str(response)).strip()
+    if response_text.startswith("```"):
+        response_text = response_text.strip("`")
+        if response_text.lower().startswith("json"):
+            response_text = response_text[4:].strip()
+
+    try:
+        payload = json.loads(response_text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Expense Agent returned invalid JSON: {response_text}") from exc
+
+    result = CategorizationResult.model_validate(payload)
     if len(result.items) != len(transactions):
         raise RuntimeError(
             "Expense Agent returned mismatched number of categorization rows."
