@@ -44,8 +44,13 @@ export default function App() {
   }
 
   async function seedDemo() {
-    await fetch(`${API_BASE_URL}/api/demo/seed`, { method: "POST" });
-    await loadSummary();
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/demo/seed`, { method: "POST" });
+      if (!response.ok) throw new Error("Unable to seed demo data.");
+      await loadSummary();
+    } catch (seedError) {
+      setError(seedError.message);
+    }
   }
 
   useEffect(() => { loadSummary(); }, []);
@@ -79,7 +84,7 @@ export default function App() {
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {summary.appliances.map((appliance) => (
                 <div key={appliance.id} className="rounded-lg border border-slate-100 p-3">
-                  <strong>{appliance.name}</strong><SimulatedBadge /><p className="mt-1 text-sm text-slate-500">{appliance.category}</p>
+                  <strong>{appliance.name}</strong>{appliance.is_simulated && <SimulatedBadge />}<p className="mt-1 text-sm text-slate-500">{appliance.category}</p>
                 </div>
               ))}
             </div>

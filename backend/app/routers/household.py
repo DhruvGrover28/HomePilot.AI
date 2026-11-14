@@ -40,6 +40,36 @@ def create_reading(payload: ReadingCreate) -> dict:
         return _read(row)
 
 
+@router.patch("/readings/{reading_id}")
+def update_reading(reading_id: int, payload: ReadingCreate) -> dict:
+    with SessionLocal() as session:
+        row = session.get(Reading, reading_id)
+        if row is None:
+            raise HTTPException(404, "Reading not found.")
+        previous = session.scalar(
+            select(Reading)
+            .where(Reading.type == payload.type, Reading.id != reading_id)
+            .order_by(Reading.reading_date.desc())
+            .limit(1)
+        )
+        if payload.meter_value is not None and previous and previous.meter_value is not None and payload.meter_value < previous.meter_value:
+            raise HTTPException(422, "Meter value cannot be lower than the previous reading.")
+        for field, value in payload.model_dump().items():
+            setattr(row, field, value)
+        session.commit(); session.refresh(row)
+        return _read(row)
+
+
+@router.delete("/readings/{reading_id}", status_code=204)
+def delete_reading(reading_id: int) -> None:
+    with SessionLocal() as session:
+        row = session.get(Reading, reading_id)
+        if row is None:
+            raise HTTPException(404, "Reading not found.")
+        session.delete(row)
+        session.commit()
+
+
 @router.post("/readings/import")
 async def import_readings(file: UploadFile = File(...)) -> dict:
     if not file.filename or not file.filename.lower().endswith(".csv"):
@@ -101,6 +131,28 @@ def create_inventory(payload: InventoryCreate) -> dict:
         return _read(row)
 
 
+@router.patch("/appliances/{appliance_id}")
+def update_appliance(appliance_id: int, payload: ApplianceCreate) -> dict:
+    with SessionLocal() as session:
+        row = session.get(Appliance, appliance_id)
+        if row is None:
+            raise HTTPException(404, "Appliance not found.")
+        for field, value in payload.model_dump().items():
+            setattr(row, field, value)
+        session.commit(); session.refresh(row)
+        return _read(row)
+
+
+@router.delete("/appliances/{appliance_id}", status_code=204)
+def delete_appliance(appliance_id: int) -> None:
+    with SessionLocal() as session:
+        row = session.get(Appliance, appliance_id)
+        if row is None:
+            raise HTTPException(404, "Appliance not found.")
+        session.delete(row)
+        session.commit()
+
+
 @router.patch("/inventory/{item_id}")
 def update_inventory(item_id: int, payload: InventoryUpdate) -> dict:
     with SessionLocal() as session:
@@ -111,6 +163,16 @@ def update_inventory(item_id: int, payload: InventoryUpdate) -> dict:
         session.add(InventoryLog(item_id=row.id, quantity=row.quantity, logged_at=clock.now(), source=payload.source, is_simulated=row.is_simulated, created_at=clock.now()))
         session.commit(); session.refresh(row)
         return _read(row)
+
+
+@router.delete("/inventory/{item_id}", status_code=204)
+def delete_inventory(item_id: int) -> None:
+    with SessionLocal() as session:
+        row = session.get(InventoryItem, item_id)
+        if row is None:
+            raise HTTPException(404, "Inventory item not found.")
+        session.delete(row)
+        session.commit()
 
 
 @router.get("/shopping-list")
@@ -127,6 +189,29 @@ def create_shopping(payload: ShoppingCreate) -> dict:
         return _read(row)
 
 
+@router.patch("/shopping-list/{item_id}")
+def update_shopping(item_id: int, payload: ShoppingCreate) -> dict:
+    with SessionLocal() as session:
+        row = session.get(ShoppingListItem, item_id)
+        if row is None:
+            raise HTTPException(404, "Shopping-list item not found.")
+        row.item_name = payload.item_name
+        row.quantity = payload.quantity
+        row.unit = payload.unit
+        session.commit(); session.refresh(row)
+        return _read(row)
+
+
+@router.delete("/shopping-list/{item_id}", status_code=204)
+def delete_shopping(item_id: int) -> None:
+    with SessionLocal() as session:
+        row = session.get(ShoppingListItem, item_id)
+        if row is None:
+            raise HTTPException(404, "Shopping-list item not found.")
+        session.delete(row)
+        session.commit()
+
+
 @router.get("/tasks")
 def list_tasks() -> list[dict]:
     with SessionLocal() as session:
@@ -139,6 +224,28 @@ def create_task(payload: TaskCreate) -> dict:
         row = Task(**payload.model_dump(), created_at=clock.now())
         session.add(row); session.commit(); session.refresh(row)
         return _read(row)
+
+
+@router.patch("/tasks/{task_id}")
+def update_task(task_id: int, payload: TaskCreate) -> dict:
+    with SessionLocal() as session:
+        row = session.get(Task, task_id)
+        if row is None:
+            raise HTTPException(404, "Task not found.")
+        for field, value in payload.model_dump().items():
+            setattr(row, field, value)
+        session.commit(); session.refresh(row)
+        return _read(row)
+
+
+@router.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int) -> None:
+    with SessionLocal() as session:
+        row = session.get(Task, task_id)
+        if row is None:
+            raise HTTPException(404, "Task not found.")
+        session.delete(row)
+        session.commit()
 
 
 @router.get("/dashboard/summary")

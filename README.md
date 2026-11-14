@@ -42,6 +42,11 @@ Frontend (create frontend/.env locally):
 3. Health check:
    GET http://localhost:8000/health
 
+Run backend tests from the backend module root:
+
+   cd backend
+   python -m pytest tests -q
+
 ### Frontend
 
 1. Install dependencies:

@@ -10,25 +10,35 @@
 
 ## Verification
 
-- Backend: `8 passed` with `pytest backend/tests -q`.
-- Frontend: `npm run build` completed successfully from `frontend`.
-- CSV validation test confirms malformed rows return HTTP 422 with row numbers.
+- Backend: `9 passed, 3 warnings` with `cd backend; python -m pytest tests -q`.
+- Frontend: `npm run build --prefix frontend` completed successfully. Vite reports a non-blocking bundle-size warning.
+- Live API verification passed on a clean SQLite database: health, empty dashboard, deterministic seed, seed idempotency, reading meter validation, all CRUD paths, successful CSV import, and all-or-nothing malformed CSV rejection.
+- Live browser verification passed with a clean frontend/backend pair: empty dashboard, charts, demo seed button, simulated labels, and populated chart/record counts.
 - Clock guard confirms direct `datetime.now` and `datetime.utcnow` calls are absent outside `clock.py`.
 
-## Changed from specification
+## Issues found and fixed during independent verification
 
-- Phase 1 uses SQLAlchemy `create_all` instead of Alembic; this is documented in the phase plan and is sufficient for the prototype schema.
-- The frontend is a focused dashboard rather than the complete later-phase multi-page UI.
-- Live Gemini, Telegram, vision, agents, scheduling, n8n and deployment remain intentionally out of scope for Phase 1.
+- The repository-root pytest command failed because `app` is imported relative to `backend`; the README and checklist now document the working command from the backend module root.
+- The old manual checklist targeted the retired finance upload endpoint; it now covers the household API and dashboard workflows.
+- The claimed CRUD surface was incomplete; update/delete routes and regression coverage were added for readings, appliances, inventory, shopping-list items and tasks.
+- The dashboard always displayed a simulated badge for appliances; it now respects each record's `is_simulated` value.
+- Demo-seed failures are now surfaced in the frontend instead of silently reloading.
 
 ## Known limitations
 
 - The old finance modules remain as unused compatibility files but are no longer routed by the application.
 - Frontend dependency audit reports existing transitive vulnerabilities; no forced upgrade was applied during this phase.
-- Deployment is blocked until the Vercel and Render accounts are ready.
+- The frontend production bundle is larger than Vite's 500 kB advisory threshold.
+- FastAPI emits a deprecation warning for the existing `on_event` startup hook.
+- Deployment is postponed until all core phases are complete, per instruction.
+- Live Gemini, Telegram, vision, agents, scheduling, n8n and deployment remain intentionally out of scope for Phase 1.
 
 ## Human action
 
 - No Phase 1 credentials are required. Keep `LLM_MODE=mock`.
 - Before Phase 4, provide the Gemini model name and API key, and the Telegram bot token.
 - Before Phase 6, provide ready Vercel and Render accounts.
+
+## Status
+
+Phase 1 is independently verified and complete after the fixes above. No external integrations or credentials were required or tested.

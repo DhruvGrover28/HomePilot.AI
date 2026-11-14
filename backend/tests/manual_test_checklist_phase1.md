@@ -1,5 +1,6 @@
-1. Start backend server and confirm health endpoint returns status ok.
-2. Upload sample_bank_statement.csv to POST /api/expenses/upload.
-3. Verify response includes upload_id, categorized transactions, and anomalies_count.
-4. Confirm at least one anomaly appears (duplicate or unusually large).
-5. Open SQLite file and verify inserted rows in transactions table.
+1. Start backend and frontend and confirm the health endpoint returns status ok.
+2. Confirm an empty database returns empty dashboard arrays and zero open tasks.
+3. Click "Seed simulated demo" and verify electricity/water charts, five appliances and simulated labels.
+4. Upload a valid readings CSV to `POST /api/readings/import` and verify the imported count.
+5. Upload a malformed readings CSV and verify HTTP 422 with row numbers and no partial inserts.
+6. Exercise create/update/delete for readings, appliances, inventory, shopping-list items and tasks.
