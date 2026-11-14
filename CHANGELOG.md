@@ -1,5 +1,9 @@
 # HomePilot AI Changelog
 
+## Provider integration - 2026-11-14
+- Added explicit Groq provider selection for the existing LangGraph Supervisor while preserving Gemini and mock modes.
+- Added bounded Groq reasoning and JSON-schema Supervisor decision validation without automatic failover.
+
 ## Phase 2 - 2026-11-14
 - Replaced fixed routing with LangGraph Supervisor orchestration and structured mock/live decisions.
 - Added bounded Energy, Water, Maintenance and Inventory specialists, evidence-based findings, budgets and recommendation suppression.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Protocol, TypedDict
 
+import httpx
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
@@ -15,6 +16,13 @@ from app.services.agent_tools import TOOLSETS
 
 SUPERVISOR_BUDGET = 8
 SPECIALIST_BUDGET = 5
+
+
+def _groq_decision_schema() -> dict:
+    schema = SupervisorDecision.model_json_schema()
+    schema["required"] = list(schema["properties"])
+    schema["additionalProperties"] = False
+    return schema
 
 
 class AgentState(TypedDict):
@@ -42,10 +50,14 @@ class DecisionModel(Protocol):
 class LiveDecisionModel:
     def __init__(self) -> None:
         settings = get_settings()
+        if not settings.gemini_api_key:
+            raise RuntimeError("Live Gemini mode requires GEMINI_API_KEY.")
         model = ChatGoogleGenerativeAI(
             model=settings.gemini_model,
             google_api_key=settings.gemini_api_key,
             temperature=0,
+            timeout=60,
+            max_retries=0,
         )
         self._structured = model.with_structured_output(SupervisorDecision)
 
@@ -77,6 +89,60 @@ class LiveDecisionModel:
                 remaining_budget=state["supervisor_budget"] - state["supervisor_calls"],
             )
         )
+
+
+class GroqDecisionModel:
+    def __init__(self) -> None:
+        settings = get_settings()
+        if not settings.groq_api_key:
+            raise RuntimeError("Live Groq mode requires GROQ_API_KEY.")
+        self._api_key = settings.groq_api_key
+        self._model = settings.groq_model
+
+    def decide(self, state: AgentState) -> SupervisorDecision:
+        prompt = (
+            "You are a bounded household investigation supervisor. "
+            "Return one JSON object matching the supplied schema. "
+            "Choose investigate only when evidence or the goal justifies it. "
+            "You may stop, choose one available specialist, or choose another after findings. "
+            "Never perform tools or modify data. "
+            f"Goal: {state['goal']}\n"
+            f"Available specialists: {state['remaining_domains']}\n"
+            f"Previous decisions: {json.dumps(state['decisions'])}\n"
+            f"Findings from tools: {json.dumps(state['findings'])}\n"
+            f"Supervisor calls remaining: {state['supervisor_budget'] - state['supervisor_calls']}\n"
+        )
+        try:
+            response = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={
+                    "model": self._model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0,
+                    "max_completion_tokens": 1024,
+                    "reasoning_effort": "low",
+                    "include_reasoning": False,
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "supervisor_decision",
+                            "strict": True,
+                            "schema": _groq_decision_schema(),
+                        },
+                    },
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"].get("content") or ""
+            if not content:
+                raise RuntimeError("Groq returned an empty Supervisor decision.")
+            return SupervisorDecision.model_validate_json(content)
+        except httpx.HTTPError as exc:
+            raise RuntimeError("Groq Supervisor request failed.") from exc
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RuntimeError("Groq returned an invalid Supervisor decision.") from exc
 
 
 class MockDecisionModel:
@@ -135,7 +201,14 @@ def _best_capability_match(goal: str, available: list[str]) -> str | None:
 
 
 def _decision_model() -> DecisionModel:
-    return MockDecisionModel() if get_settings().llm_mode == "mock" else LiveDecisionModel()
+    settings = get_settings()
+    if settings.llm_mode == "mock":
+        return MockDecisionModel()
+    if settings.llm_provider == "groq":
+        return GroqDecisionModel()
+    if settings.llm_provider == "gemini":
+        return LiveDecisionModel()
+    raise RuntimeError(f"Unsupported live LLM provider: {settings.llm_provider}")
 
 
 def _finding_for(domain: str, result: dict, finding_index: int) -> Finding:

@@ -10,8 +10,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./homepilot.db"
     cors_origins: str = "http://localhost:5173"
     llm_mode: str = "mock"
+    llm_provider: str = "gemini"
     gemini_api_key: str = ""
     gemini_model: str = ""
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-20b"
     feature_telegram: bool = False
     feature_vision: bool = False
     feature_followups: bool = True

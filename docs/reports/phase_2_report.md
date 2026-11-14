@@ -12,10 +12,13 @@
 - Preserved `POST /api/agents/runs` and `GET /api/agents/runs/{run_id}`.
 - Updated the dashboard to render structured recommendation subjects, actions and scores.
 - Added behavioral tests for dynamic routing, evidence flow, water-only and inventory-only scope, insufficient history, irrelevant goals, budget exhaustion and suppression.
+- Added explicit Groq provider configuration for the existing Supervisor without changing the LangGraph topology or adding automatic failover.
+- Added Groq JSON-schema decision validation with bounded reasoning (`low`), hidden reasoning output and a 1024-token completion budget.
 
 ## Verification
 
-- Backend: `16 passed, 11 warnings` with `cd backend; python -m pytest tests -q`.
+- Backend: `18 passed, 11 warnings` with `cd backend; python -m pytest tests -q` after the Groq integration.
+- Focused provider/Supervisor tests: `9 passed, 11 warnings` after adding the Groq adapter.
 - Focused graph tests verify that later decisions receive prior findings (`findings_seen`), rather than asserting a fixed trace.
 - Frontend: `npm run build --prefix frontend` passed. Vite emitted its existing non-blocking bundle-size advisory.
 - Pylance import audit is clean for LangChain/Gemini imports after installation.
@@ -49,6 +52,15 @@
 - The current SDK diagnostic did not run electricity-spike, water-only or low-inventory workflows because the required minimal generation gate failed.
 - Electricity-spike, water-only, low-inventory, live decision-flow, live tool-call, live persistence and live recommendation claims remain unverified.
 - `.env` was not modified and remains ignored/untracked.
+
+## Groq integration results
+
+- Groq model availability was verified separately for `openai/gpt-oss-20b` with HTTP 200.
+- A corrected minimal Groq generation returned `READY` with HTTP 200 in 0.99 seconds.
+- The Groq adapter and its Pydantic structured-decision parsing are covered by focused tests using a non-network fake response.
+- A genuine Groq-powered Supervisor decision succeeded for an electricity-spike goal: it selected `energy`, returned a schema-valid decision, and completed in 1.02 seconds.
+- One isolated end-to-end live workflow succeeded against temporary seeded SQLite data. It persisted the run, executed one deterministic energy tool, produced one finding, and made a subsequent Supervisor decision with `findings_seen` values `0, 1`. The Supervisor stopped without selecting maintenance because the returned evidence did not justify that follow-up; no recommendation was generated.
+- The isolated workflow used `LLM_PROVIDER=groq` and `LLM_MODE=live` as process-local settings. The temporary database was removed after verification.
 
 ## Known limitations
 

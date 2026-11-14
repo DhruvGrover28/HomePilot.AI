@@ -5,7 +5,7 @@ from app.config import get_settings
 from app.db import initialize_database
 from app.main import app
 from app.services import agent_graph
-from app.services.agent_graph import _recommendations, execute_agent
+from app.services.agent_graph import GroqDecisionModel, _recommendations, execute_agent
 
 
 @pytest.fixture
@@ -153,3 +153,66 @@ def test_specialist_budget_and_duplicate_suppression_are_enforced(mock_mode, mon
     assert len(recommendations) == 2
     assert recommendations[1]["suppressed"] is True
     assert trace[0]["kind"] == "recommendation_suppressed"
+
+
+def test_groq_decision_model_validates_structured_response(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"action":"investigate","specialist":"energy","rationale":"The goal identifies energy use.","next_investigation":null}'
+                        }
+                    }
+                ]
+            }
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_graph.httpx, "post", fake_post)
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    get_settings.cache_clear()
+    try:
+        decision = GroqDecisionModel().decide(
+            {
+                "goal": "Investigate electricity.",
+                "remaining_domains": ["energy"],
+                "decisions": [],
+                "findings": [],
+                "supervisor_budget": 8,
+                "supervisor_calls": 0,
+            }
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert decision.specialist == "energy"
+    assert decision.action == "investigate"
+    assert captured["kwargs"]["json"]["reasoning_effort"] == "low"
+    assert captured["kwargs"]["json"]["include_reasoning"] is False
+    assert captured["kwargs"]["json"]["max_completion_tokens"] == 1024
+    schema = captured["kwargs"]["json"]["response_format"]["json_schema"]["schema"]
+    assert set(schema["required"]) == set(schema["properties"])
+    assert schema["additionalProperties"] is False
+
+
+def test_live_groq_requires_credentials(monkeypatch):
+    monkeypatch.setenv("LLM_MODE", "live")
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="GROQ_API_KEY"):
+            agent_graph._decision_model()
+    finally:
+        get_settings.cache_clear()

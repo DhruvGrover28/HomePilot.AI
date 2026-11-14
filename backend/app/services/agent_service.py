@@ -25,8 +25,11 @@ def run_agent(
     specialist_budget: int = SPECIALIST_BUDGET,
 ) -> dict:
     settings = get_settings()
-    if not settings.gemini_api_key and settings.llm_mode != "mock":
-        raise RuntimeError("Live agent mode requires GEMINI_API_KEY.")
+    if settings.llm_mode != "mock":
+        if settings.llm_provider == "gemini" and not settings.gemini_api_key:
+            raise RuntimeError("Live Gemini mode requires GEMINI_API_KEY.")
+        if settings.llm_provider == "groq" and not settings.groq_api_key:
+            raise RuntimeError("Live Groq mode requires GROQ_API_KEY.")
     domains = list(dict.fromkeys(payload.domains)) or list(DOMAINS)
     unknown = set(domains) - set(DOMAINS)
     if unknown:
