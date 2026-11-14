@@ -60,7 +60,7 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/api/agents/runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: "Review household operations and identify priorities." }),
+        body: JSON.stringify({ goal: "Review energy, water, maintenance and inventory priorities." }),
       });
       if (!response.ok) throw new Error("Unable to run household analysis.");
       setAgentRun(await response.json());
@@ -115,17 +115,29 @@ export default function App() {
                 <span className="text-xs uppercase tracking-wide text-teal-800">{agentRun.mode} mode</span>
               </div>
               <p className="mt-1 text-sm text-slate-600">{agentRun.goal}</p>
+              <div className="mt-4 space-y-2">
+                {agentRun.findings.map((finding) => (
+                  <article key={finding.id} className="rounded-lg bg-white p-3 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-semibold">{finding.subject}</h3>
+                      <span className="text-xs uppercase tracking-wide text-slate-500">{finding.severity}</span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">{finding.summary}</p>
+                  </article>
+                ))}
+              </div>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {agentRun.recommendations.map((recommendation) => (
-                  <article key={recommendation.domain} className="rounded-lg bg-white p-4 shadow-sm">
-                    <h3 className="font-semibold">{recommendation.title}</h3>
+                  <article key={`${recommendation.category}-${recommendation.subject}`} className="rounded-lg bg-white p-4 shadow-sm">
+                    <h3 className="font-semibold">{recommendation.subject}</h3>
                     <p className="mt-1 text-sm text-slate-600">{recommendation.summary}</p>
-                    <p className="mt-3 text-sm text-slate-800">{recommendation.recommendation}</p>
+                    <p className="mt-3 text-sm text-slate-800">{recommendation.suggested_action}</p>
+                    <p className="mt-2 text-xs text-slate-500">Score: {recommendation.score.toFixed(1)}</p>
                   </article>
                 ))}
               </div>
               <p className="mt-4 text-xs text-slate-500">
-                Routed through: {agentRun.trace.map((step) => step.node).join(" -> ")}
+                Trace: {agentRun.trace.map((step) => step.node || step.kind).join(" -> ")}
               </p>
             </section>
           )}

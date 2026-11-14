@@ -1,8 +1,40 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-AgentDomain = Literal["energy", "maintenance", "inventory"]
+AgentDomain = Literal["energy", "water", "maintenance", "inventory"]
+DecisionAction = Literal["investigate", "stop"]
+
+
+class SupervisorDecision(BaseModel):
+    action: DecisionAction
+    specialist: AgentDomain | None = None
+    rationale: str
+    next_investigation: str | None = None
+
+
+class Finding(BaseModel):
+    id: str
+    category: str
+    subject: str
+    summary: str
+    evidence: list[dict[str, Any]]
+    severity: Literal["info", "low", "medium", "high"]
+    confidence: float = Field(ge=0, le=1)
+    possible_explanations: list[str]
+    suggested_next_investigation: str | None = None
+    suggested_action: str | None = None
+
+
+class Recommendation(BaseModel):
+    finding_ids: list[str] = Field(min_length=1)
+    category: str
+    subject: str
+    summary: str
+    suggested_action: str
+    score: float = Field(ge=0, le=100)
+    suppressed: bool = False
+    suppression_reason: str | None = None
 
 
 class AgentRunCreate(BaseModel):
@@ -17,5 +49,9 @@ class AgentRunOut(BaseModel):
     status: str
     mode: str
     trace: list[dict]
+    findings: list[Finding]
+    decisions: list[SupervisorDecision]
+    stop_reason: str | None = None
+    budgets: dict[str, int] = Field(default_factory=dict)
     recommendations: list[dict]
     created_at: str

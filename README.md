@@ -59,7 +59,7 @@ Run backend tests from the backend module root:
 
 Key endpoints include `GET /api/dashboard/summary`, CRUD endpoints under `/api/readings`, `/api/appliances`, `/api/inventory`, `/api/shopping-list`, and `/api/tasks`, `POST /api/readings/import`, `POST /api/demo/seed`, `POST /api/agents/runs`, and `GET /api/agents/runs/{run_id}`.
 
-Phase 2 agent analysis is deterministic and offline when `LLM_MODE=mock` (the default).
+Phase 2 agent analysis uses a bounded LangGraph Supervisor. `LLM_MODE=mock` runs the same graph offline with structured mock decisions; `LLM_MODE=live` uses the configured Gemini model for Supervisor decisions.
 
 ## Deployment Plan for Phase 1
 

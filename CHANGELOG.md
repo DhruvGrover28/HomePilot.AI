@@ -1,9 +1,10 @@
 # HomePilot AI Changelog
 
 ## Phase 2 - 2026-11-14
-- Added bounded Supervisor routing for energy, maintenance and inventory analyses.
-- Added persisted agent runs, trace/recommendation APIs and dashboard analysis cards.
-- Kept the verified path deterministic and mock-safe; live Gemini remains pending credentials and provider setup.
+- Replaced fixed routing with LangGraph Supervisor orchestration and structured mock/live decisions.
+- Added bounded Energy, Water, Maintenance and Inventory specialists, evidence-based findings, budgets and recommendation suppression.
+- Added persisted agent traces and dashboard findings/recommendations.
+- Live Gemini remains blocked by the configured model being unavailable to new users.
 
 ## Phase 1 - 2026-11-14
 - Reworked the finance prototype into the HomePilot household foundation.

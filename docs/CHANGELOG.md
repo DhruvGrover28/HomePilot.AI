@@ -3,7 +3,7 @@
 Primary changelog is maintained at the project root in CHANGELOG.md.
 
 ## Phase 2 - 2026-11-14
-- Added bounded Supervisor routing, persisted agent runs and dashboard recommendations.
+- Added LangGraph Supervisor routing, bounded specialists, structured findings, budgets and dashboard recommendations.
 
 ## Phase 1 - 2026-11-14
 - Independent verification fixed the stale test checklist, completed CRUD routes, respected per-record simulated labels, and added regression coverage.
