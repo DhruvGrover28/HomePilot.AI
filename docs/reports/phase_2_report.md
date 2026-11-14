@@ -12,8 +12,10 @@
 - Preserved `POST /api/agents/runs` and `GET /api/agents/runs/{run_id}`.
 - Updated the dashboard to render structured recommendation subjects, actions and scores.
 - Added behavioral tests for dynamic routing, evidence flow, water-only and inventory-only scope, insufficient history, irrelevant goals, budget exhaustion and suppression.
-- Added explicit Groq provider configuration for the existing Supervisor without changing the LangGraph topology or adding automatic failover.
+- Added explicit Groq provider configuration for the existing Supervisor without changing the LangGraph topology.
 - Added Groq JSON-schema decision validation with bounded reasoning (`low`), hidden reasoning output and a 1024-token completion budget.
+- Added OpenRouter JSON-schema Supervisor support and an application-level failover layer with configurable provider order.
+- Added staggered OpenRouter → Groq → Gemini provider racing with a shared 50-second deadline, sanitized attempt traces and provider-exhaustion handling without restarting the LangGraph workflow or repeating specialist tools.
 
 ## Verification
 
@@ -61,6 +63,15 @@
 - A genuine Groq-powered Supervisor decision succeeded for an electricity-spike goal: it selected `energy`, returned a schema-valid decision, and completed in 1.02 seconds.
 - One isolated end-to-end live workflow succeeded against temporary seeded SQLite data. It persisted the run, executed one deterministic energy tool, produced one finding, and made a subsequent Supervisor decision with `findings_seen` values `0, 1`. The Supervisor stopped without selecting maintenance because the returned evidence did not justify that follow-up; no recommendation was generated.
 - The isolated workflow used `LLM_PROVIDER=groq` and `LLM_MODE=live` as process-local settings. The temporary database was removed after verification.
+
+## Three-provider verification
+
+- Genuine Gemini Supervisor decision: failed after 58.73 seconds with the configured `gemini-3.8-flash` model; this remains consistent with the previously observed generation timeout.
+- Genuine Groq Supervisor decision: succeeded with `openai/gpt-oss-20b` in 0.75 seconds.
+- Genuine OpenRouter Supervisor decision: succeeded with `anthropic/claude-sonnet-5.5` in 4.48 seconds. OpenRouter reported the routed hosting provider as `Azure`.
+- Controlled tests verify staggered OpenRouter → Groq → Gemini scheduling, explicit single-provider mode, exhaustion, schema failures, programming-error boundaries and no duplicate specialist execution.
+- One isolated automatic-mode end-to-end workflow succeeded with temporary seeded SQLite data. Gemini timed out on both Supervisor decisions, Groq succeeded on both, OpenRouter was not needed, one Energy tool executed, the second decision saw `findings_seen=1`, the run persisted, and no duplicate tool execution occurred.
+- The new staggered parallel race itself has only been verified with controlled asynchronous tests; no new live multi-provider race was run, so no additional live race claim is made.
 
 ## Known limitations
 

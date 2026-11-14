@@ -1,28 +1,28 @@
 from __future__ import annotations
 
-import json
 from typing import Protocol, TypedDict
 
 import httpx
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 
 from app.config import get_settings
 from app.domain import priority_score
 from app.schemas_agents import Finding, Recommendation, SupervisorDecision
 from app.services.agent_tools import TOOLSETS
+from app.services.provider_models import (
+    FailoverDecisionModel,
+    GeminiDecisionModel,
+    GroqDecisionModel,
+    OpenRouterDecisionModel,
+    ProviderExhaustedError,
+    ProviderDecisionModel,
+)
+
+LiveDecisionModel = GeminiDecisionModel
 
 
 SUPERVISOR_BUDGET = 8
 SPECIALIST_BUDGET = 5
-
-
-def _groq_decision_schema() -> dict:
-    schema = SupervisorDecision.model_json_schema()
-    schema["required"] = list(schema["properties"])
-    schema["additionalProperties"] = False
-    return schema
 
 
 class AgentState(TypedDict):
@@ -45,104 +45,6 @@ class AgentState(TypedDict):
 class DecisionModel(Protocol):
     def decide(self, state: AgentState) -> SupervisorDecision:
         ...
-
-
-class LiveDecisionModel:
-    def __init__(self) -> None:
-        settings = get_settings()
-        if not settings.gemini_api_key:
-            raise RuntimeError("Live Gemini mode requires GEMINI_API_KEY.")
-        model = ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
-            google_api_key=settings.gemini_api_key,
-            temperature=0,
-            timeout=60,
-            max_retries=0,
-        )
-        self._structured = model.with_structured_output(SupervisorDecision)
-
-    def decide(self, state: AgentState) -> SupervisorDecision:
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a bounded household investigation supervisor. "
-                    "Choose investigate only when evidence or the goal justifies it. "
-                    "You may stop, choose one available specialist, or choose another after findings. "
-                    "Never perform tools or modify data. Return only the requested structured decision.",
-                ),
-                (
-                    "human",
-                    "Goal: {goal}\nAvailable specialists: {available}\n"
-                    "Previous decisions: {decisions}\nFindings from tools: {findings}\n"
-                    "Supervisor calls remaining: {remaining_budget}\n"
-                    "Select a specialist only from Available specialists.",
-                ),
-            ]
-        )
-        return self._structured.invoke(
-            prompt.format_messages(
-                goal=state["goal"],
-                available=state["remaining_domains"],
-                decisions=json.dumps(state["decisions"]),
-                findings=json.dumps(state["findings"]),
-                remaining_budget=state["supervisor_budget"] - state["supervisor_calls"],
-            )
-        )
-
-
-class GroqDecisionModel:
-    def __init__(self) -> None:
-        settings = get_settings()
-        if not settings.groq_api_key:
-            raise RuntimeError("Live Groq mode requires GROQ_API_KEY.")
-        self._api_key = settings.groq_api_key
-        self._model = settings.groq_model
-
-    def decide(self, state: AgentState) -> SupervisorDecision:
-        prompt = (
-            "You are a bounded household investigation supervisor. "
-            "Return one JSON object matching the supplied schema. "
-            "Choose investigate only when evidence or the goal justifies it. "
-            "You may stop, choose one available specialist, or choose another after findings. "
-            "Never perform tools or modify data. "
-            f"Goal: {state['goal']}\n"
-            f"Available specialists: {state['remaining_domains']}\n"
-            f"Previous decisions: {json.dumps(state['decisions'])}\n"
-            f"Findings from tools: {json.dumps(state['findings'])}\n"
-            f"Supervisor calls remaining: {state['supervisor_budget'] - state['supervisor_calls']}\n"
-        )
-        try:
-            response = httpx.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                json={
-                    "model": self._model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0,
-                    "max_completion_tokens": 1024,
-                    "reasoning_effort": "low",
-                    "include_reasoning": False,
-                    "response_format": {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "supervisor_decision",
-                            "strict": True,
-                            "schema": _groq_decision_schema(),
-                        },
-                    },
-                },
-                timeout=30,
-            )
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"].get("content") or ""
-            if not content:
-                raise RuntimeError("Groq returned an empty Supervisor decision.")
-            return SupervisorDecision.model_validate_json(content)
-        except httpx.HTTPError as exc:
-            raise RuntimeError("Groq Supervisor request failed.") from exc
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise RuntimeError("Groq returned an invalid Supervisor decision.") from exc
 
 
 class MockDecisionModel:
@@ -204,11 +106,13 @@ def _decision_model() -> DecisionModel:
     settings = get_settings()
     if settings.llm_mode == "mock":
         return MockDecisionModel()
-    if settings.llm_provider == "groq":
-        return GroqDecisionModel()
-    if settings.llm_provider == "gemini":
-        return LiveDecisionModel()
-    raise RuntimeError(f"Unsupported live LLM provider: {settings.llm_provider}")
+    if settings.llm_provider == "gemini" and not settings.gemini_api_key:
+        raise RuntimeError("Live Gemini mode requires GEMINI_API_KEY.")
+    if settings.llm_provider == "groq" and not settings.groq_api_key:
+        raise RuntimeError("Live Groq mode requires GROQ_API_KEY.")
+    if settings.llm_provider == "openrouter" and not settings.openrouter_api_key:
+        raise RuntimeError("Live OpenRouter mode requires OPENROUTER_API_KEY.")
+    return FailoverDecisionModel()
 
 
 def _finding_for(domain: str, result: dict, finding_index: int) -> Finding:
@@ -340,9 +244,34 @@ def build_agent_graph(decision_model: DecisionModel):
             trace = list(state["trace"])
             trace.append({"kind": "budget_exhausted", "scope": "supervisor", "reason": "supervisor decision budget exhausted"})
             return {"status": "stopped", "stop_reason": "supervisor_budget_exhausted", "trace": trace}
-        decision = decision_model.decide(state)
+        try:
+            decision = decision_model.decide(state)
+        except ProviderExhaustedError as exc:
+            trace = list(state["trace"]) + exc.attempts
+            trace.append(
+                {
+                    "kind": "provider_exhausted",
+                    "reason": "All configured live providers failed.",
+                    "attempts": exc.attempts,
+                }
+            )
+            return {
+                "status": "stopped",
+                "stop_reason": "provider_exhausted",
+                "trace": trace,
+            }
         decisions = list(state["decisions"]) + [decision.model_dump()]
-        trace = list(state["trace"]) + [{"kind": "decision", "decision": decision.model_dump(), "findings_seen": len(state["findings"])}]
+        provider_attempts = getattr(decision_model, "last_attempts", [])
+        successful_attempt = next((item for item in reversed(provider_attempts) if item["success"]), None)
+        trace = list(state["trace"]) + provider_attempts + [
+            {
+                "kind": "decision",
+                "decision": decision.model_dump(),
+                "findings_seen": len(state["findings"]),
+                "provider": successful_attempt["provider"] if successful_attempt else None,
+                "model": successful_attempt["model"] if successful_attempt else None,
+            }
+        ]
         calls = state["supervisor_calls"] + 1
         if decision.action == "investigate" and decision.specialist in state["remaining_domains"]:
             remaining = [domain for domain in state["remaining_domains"] if domain != decision.specialist]

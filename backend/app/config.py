@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     gemini_model: str = ""
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-20b"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "anthropic/claude-sonnet-5.5"
+    llm_provider_order: str = "openrouter,groq,gemini"
     feature_telegram: bool = False
     feature_vision: bool = False
     feature_followups: bool = True
@@ -32,6 +35,13 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def llm_provider_order_list(self) -> list[str]:
+        providers = [provider.strip().lower() for provider in self.llm_provider_order.split(",") if provider.strip()]
+        if not providers or any(provider not in {"gemini", "groq", "openrouter"} for provider in providers):
+            raise ValueError("LLM_PROVIDER_ORDER must contain only gemini, groq, and openrouter.")
+        return providers
 
 
 @lru_cache

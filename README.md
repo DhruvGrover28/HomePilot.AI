@@ -59,7 +59,15 @@ Run backend tests from the backend module root:
 
 Key endpoints include `GET /api/dashboard/summary`, CRUD endpoints under `/api/readings`, `/api/appliances`, `/api/inventory`, `/api/shopping-list`, and `/api/tasks`, `POST /api/readings/import`, `POST /api/demo/seed`, `POST /api/agents/runs`, and `GET /api/agents/runs/{run_id}`.
 
-Phase 2 agent analysis uses a bounded LangGraph Supervisor. `LLM_MODE=mock` runs the same graph offline with structured mock decisions. In live mode, set `LLM_PROVIDER=gemini` with `GEMINI_API_KEY` and `GEMINI_MODEL`, or set `LLM_PROVIDER=groq` with `GROQ_API_KEY` and `GROQ_MODEL` (default `openai/gpt-oss-20b`). Live provider selection is explicit; the application does not automatically fail over between providers.
+Phase 2 agent analysis uses a bounded LangGraph Supervisor. `LLM_MODE=mock` runs the same graph offline with structured mock decisions. In live mode, explicit selection uses `LLM_PROVIDER=gemini`, `groq`, or `openrouter`; `LLM_PROVIDER=auto` runs a staggered provider race using the configured `LLM_PROVIDER_ORDER` (default `openrouter,groq,gemini`) at each Supervisor decision. OpenRouter starts immediately, Groq starts after 10 seconds, and Gemini starts after 20 seconds; the shared race deadline is 50 seconds. It never silently switches to mock mode. Configure the selected provider with its API key and model:
+
+- Gemini: `GEMINI_API_KEY` and `GEMINI_MODEL`
+- Groq: `GROQ_API_KEY` and `GROQ_MODEL` (default `openai/gpt-oss-20b`)
+- OpenRouter: `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` (default `anthropic/claude-sonnet-5.5`)
+
+Fallback is limited to provider connection/timeout, rate-limit, server-unavailability, configuration, empty-response and structured-schema failures. Programming errors and valid Supervisor stop decisions do not trigger fallback. Started providers run concurrently; the first valid Pydantic decision wins, while remaining tasks are cancelled on a best-effort basis without waiting for losing requests. Each attempt is recorded in the persisted trace with scheduled/actual start, elapsed time, outcome, cancellation, winner status, failure category and HTTP status where available. If all configured providers fail or the shared deadline expires, the run stops with a sanitized provider-exhaustion event and no specialist tool is executed.
+
+OpenRouter's `anthropic/claude-sonnet-5.5` model may be routed internally to a hosting provider such as Azure. That internal route is distinct from HomePilot's application-level OpenRouter → Groq → Gemini provider race.
 
 ## Deployment Plan for Phase 1
 

@@ -30,6 +30,8 @@ def run_agent(
             raise RuntimeError("Live Gemini mode requires GEMINI_API_KEY.")
         if settings.llm_provider == "groq" and not settings.groq_api_key:
             raise RuntimeError("Live Groq mode requires GROQ_API_KEY.")
+        if settings.llm_provider == "openrouter" and not settings.openrouter_api_key:
+            raise RuntimeError("Live OpenRouter mode requires OPENROUTER_API_KEY.")
     domains = list(dict.fromkeys(payload.domains)) or list(DOMAINS)
     unknown = set(domains) - set(DOMAINS)
     if unknown:

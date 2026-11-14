@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 from fastapi.testclient import TestClient
 import pytest
 
@@ -6,6 +9,14 @@ from app.db import initialize_database
 from app.main import app
 from app.services import agent_graph
 from app.services.agent_graph import GroqDecisionModel, _recommendations, execute_agent
+from app.services.provider_models import (
+    FailoverDecisionModel,
+    HttpDecisionModel,
+    OpenRouterDecisionModel,
+    ProviderCallError,
+    ProviderExhaustedError,
+    StaggeredDecisionModel,
+)
 
 
 @pytest.fixture
@@ -159,6 +170,8 @@ def test_groq_decision_model_validates_structured_response(monkeypatch):
     captured = {}
 
     class FakeResponse:
+        is_success = True
+
         def raise_for_status(self):
             return None
 
@@ -216,3 +229,406 @@ def test_live_groq_requires_credentials(monkeypatch):
             agent_graph._decision_model()
     finally:
         get_settings.cache_clear()
+
+
+def _decision():
+    return {
+        "action": "investigate",
+        "specialist": "energy",
+        "rationale": "Energy is relevant.",
+        "next_investigation": None,
+    }
+
+
+def test_failover_stops_after_first_success(monkeypatch):
+    calls = []
+
+    class FakeProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name + "-model"
+            self.last_metadata = {}
+
+        def decide(self, state):
+            calls.append(self.provider)
+            return agent_graph.SupervisorDecision.model_validate(_decision())
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider(name))
+    model = StaggeredDecisionModel(["gemini", "groq", "openrouter"], deadline_seconds=0.2, stagger_seconds=0.01)
+    asyncio.run(model.decide_async({"goal": "energy", "remaining_domains": ["energy"], "findings": [], "decisions": [], "supervisor_budget": 8, "supervisor_calls": 0}))
+    assert calls == ["gemini"]
+    assert model.last_attempts[0]["success"] is True
+
+
+def test_failover_uses_groq_before_openrouter(monkeypatch):
+    calls = []
+
+    class FakeProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name + "-model"
+            self.last_metadata = {}
+
+        def decide(self, state):
+            calls.append(self.provider)
+            if self.provider == "gemini":
+                raise ProviderCallError(self.provider, self.model, "timeout")
+            return agent_graph.SupervisorDecision.model_validate(_decision())
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider(name))
+    model = StaggeredDecisionModel(["gemini", "groq", "openrouter"], deadline_seconds=0.2, stagger_seconds=0.01)
+    asyncio.run(model.decide_async({"goal": "energy", "remaining_domains": ["energy"], "findings": [], "decisions": [], "supervisor_budget": 8, "supervisor_calls": 0}))
+    assert calls == ["gemini", "groq"]
+    assert model.last_attempts[0]["fallback_triggered"] is True
+
+
+def test_failover_reaches_openrouter_and_records_exhaustion(monkeypatch):
+    calls = []
+
+    class FakeProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name + "-model"
+            self.last_metadata = {}
+
+        def decide(self, state):
+            calls.append(self.provider)
+            if self.provider != "openrouter":
+                raise ProviderCallError(self.provider, self.model, "provider_unavailable", http_status=503)
+            return agent_graph.SupervisorDecision.model_validate(_decision())
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider(name))
+    model = StaggeredDecisionModel(["gemini", "groq", "openrouter"], deadline_seconds=0.2, stagger_seconds=0.01)
+    asyncio.run(model.decide_async({"goal": "energy", "remaining_domains": ["energy"], "findings": [], "decisions": [], "supervisor_budget": 8, "supervisor_calls": 0}))
+    assert calls == ["gemini", "groq", "openrouter"]
+    assert model.last_attempts[-1]["success"] is True
+
+
+def test_failover_all_failures_raise_controlled_error(monkeypatch):
+    class FakeProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name + "-model"
+            self.last_metadata = {}
+
+        def decide(self, state):
+            raise ProviderCallError(self.provider, self.model, "schema_validation")
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider(name))
+    model = StaggeredDecisionModel(["gemini", "groq", "openrouter"], deadline_seconds=0.2, stagger_seconds=0.01)
+    with pytest.raises(ProviderExhaustedError) as error:
+        asyncio.run(model.decide_async({"goal": "energy", "remaining_domains": ["energy"], "findings": [], "decisions": [], "supervisor_budget": 8, "supervisor_calls": 0}))
+    assert [attempt["provider"] for attempt in error.value.attempts] == ["gemini", "groq", "openrouter"]
+
+
+def test_failover_does_not_catch_programming_errors(monkeypatch):
+    class FakeProvider:
+        provider = "gemini"
+        model = "gemini-model"
+        last_metadata = {}
+
+        def decide(self, state):
+            raise ValueError("programming bug")
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider())
+    model = StaggeredDecisionModel(["gemini", "groq", "openrouter"], deadline_seconds=0.2, stagger_seconds=0.01)
+    with pytest.raises(ValueError, match="programming bug"):
+        asyncio.run(model.decide_async({"goal": "energy", "remaining_domains": ["energy"], "findings": [], "decisions": [], "supervisor_budget": 8, "supervisor_calls": 0}))
+
+
+def test_explicit_provider_does_not_call_fallbacks(monkeypatch):
+    calls = []
+
+    class FakeProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name + "-model"
+            self.last_metadata = {}
+
+        def decide(self, state):
+            calls.append(self.provider)
+            return agent_graph.SupervisorDecision.model_validate(_decision())
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider(name))
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LLM_PROVIDER_ORDER", "openrouter,groq,gemini")
+    get_settings.cache_clear()
+    try:
+        FailoverDecisionModel().decide({"goal": "energy", "remaining_domains": ["energy"], "findings": [], "decisions": [], "supervisor_budget": 8, "supervisor_calls": 0})
+    finally:
+        get_settings.cache_clear()
+    assert calls == ["openrouter"]
+
+
+def test_openrouter_request_validates_schema_and_records_routed_metadata(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        is_success = True
+
+        def json(self):
+            return {
+                "model": "anthropic/claude-sonnet-5.5",
+                "provider": "test-host",
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"action":"stop","specialist":null,"rationale":"Evidence is sufficient.","next_investigation":null}'
+                        }
+                    }
+                ],
+            }
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.provider_models.httpx.post", fake_post)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-5.5")
+    get_settings.cache_clear()
+    try:
+        model = OpenRouterDecisionModel()
+        decision = model.decide(
+            {
+                "goal": "Review household.",
+                "remaining_domains": ["energy"],
+                "decisions": [],
+                "findings": [],
+                "supervisor_budget": 8,
+                "supervisor_calls": 0,
+            }
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert decision.action == "stop"
+    assert model.last_metadata == {"model": "anthropic/claude-sonnet-5.5", "provider": "test-host"}
+    assert "reasoning_effort" not in captured["kwargs"]["json"]
+
+
+def test_staggered_race_caps_provider_timeout_to_remaining_deadline(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        is_success = True
+
+        def json(self):
+            return {
+                "model": "test-model",
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"action":"stop","specialist":null,"rationale":"Done.","next_investigation":null}'
+                        }
+                    }
+                ],
+            }
+
+    def fake_post(url, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        return FakeResponse()
+
+    provider = HttpDecisionModel("openrouter", "test-key", "test-model", "https://example.test")
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: provider)
+    monkeypatch.setattr("app.services.provider_models.httpx.post", fake_post)
+    model = StaggeredDecisionModel(["openrouter"], deadline_seconds=0.1, stagger_seconds=0)
+
+    asyncio.run(model.decide_async(_race_state()))
+
+    assert 0 < captured["timeout"] <= 0.1
+
+
+def test_failover_happens_before_tools_and_does_not_repeat_tool_execution(monkeypatch):
+    calls = {"gemini": 0, "groq": 0}
+    tool_calls = []
+
+    class FakeProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name + "-model"
+            self.last_metadata = {}
+
+        def decide(self, state):
+            calls[self.provider] += 1
+            if self.provider == "gemini":
+                raise ProviderCallError(self.provider, self.model, "timeout")
+            if calls[self.provider] == 1:
+                return agent_graph.SupervisorDecision.model_validate(_decision())
+            return agent_graph.SupervisorDecision(action="stop", rationale="Evidence is sufficient.")
+
+    def energy_tool():
+        tool_calls.append("energy")
+        return {
+            "type": "energy_readings",
+            "count": 6,
+            "rates": [1, 1, 1, 1, 1, 4],
+            "statistics": {},
+            "anomaly": {"flagged": True},
+        }
+
+    monkeypatch.setenv("LLM_MODE", "live")
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider(name))
+    monkeypatch.setitem(agent_graph.TOOLSETS, "energy", (energy_tool,))
+    monkeypatch.setattr(
+        agent_graph,
+        "_decision_model",
+        lambda: StaggeredDecisionModel(["gemini", "groq"], deadline_seconds=0.2, stagger_seconds=0.01),
+    )
+    result = execute_agent("Investigate energy.", ["energy"])
+
+    attempts = [item for item in result["trace"] if item["kind"] == "provider_attempt"]
+    decisions = [item for item in result["trace"] if item["kind"] == "decision"]
+    assert tool_calls == ["energy"]
+    assert [item["provider"] for item in attempts] == ["gemini", "groq", "gemini", "groq"]
+    assert [item["provider"] for item in decisions] == ["groq", "groq"]
+    assert [item["findings_seen"] for item in decisions] == [0, 1]
+
+
+def _race_state():
+    return {
+        "goal": "Investigate energy.",
+        "remaining_domains": ["energy"],
+        "findings": [],
+        "decisions": [],
+        "supervisor_budget": 8,
+        "supervisor_calls": 0,
+    }
+
+
+def test_staggered_race_starts_providers_at_configured_offsets(monkeypatch):
+    starts = {}
+
+    class TimedProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name
+            self.last_metadata = {}
+
+        def decide(self, state):
+            starts[self.provider] = time.monotonic()
+            time.sleep(0.3)
+            raise ProviderCallError(self.provider, self.model, "timeout")
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: TimedProvider(name))
+    model = StaggeredDecisionModel(["openrouter", "groq", "gemini"], deadline_seconds=0.16, stagger_seconds=0.04)
+    with pytest.raises(ProviderExhaustedError):
+        asyncio.run(model.decide_async(_race_state()))
+    assert starts["groq"] - starts["openrouter"] >= 0.025
+    assert starts["gemini"] - starts["openrouter"] >= 0.06
+
+
+def test_valid_openrouter_prevents_later_starts(monkeypatch):
+    calls = []
+
+    class FastProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name
+            self.last_metadata = {}
+
+        def decide(self, state):
+            calls.append(self.provider)
+            return agent_graph.SupervisorDecision.model_validate(_decision())
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FastProvider(name))
+    model = StaggeredDecisionModel(["openrouter", "groq", "gemini"], deadline_seconds=0.2, stagger_seconds=0.05)
+    asyncio.run(model.decide_async(_race_state()))
+    assert calls == ["openrouter"]
+    assert model.last_attempts[0]["winner"] is True
+    assert all(item["cancelled"] for item in model.last_attempts[1:])
+
+
+def test_groq_wins_while_openrouter_continues(monkeypatch):
+    started = []
+    completed = []
+
+    class Provider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name
+            self.last_metadata = {}
+
+        def decide(self, state):
+            started.append(self.provider)
+            if self.provider == "openrouter":
+                time.sleep(0.2)
+            else:
+                time.sleep(0.01)
+            completed.append(self.provider)
+            if self.provider == "groq":
+                return agent_graph.SupervisorDecision.model_validate(_decision())
+            raise ProviderCallError(self.provider, self.model, "timeout")
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: Provider(name))
+    started_at = time.monotonic()
+    model = StaggeredDecisionModel(["openrouter", "groq", "gemini"], deadline_seconds=0.4, stagger_seconds=0.03)
+    decision = asyncio.run(model.decide_async(_race_state()))
+    elapsed = time.monotonic() - started_at
+    time.sleep(0.22)
+    assert decision.specialist == "energy"
+    assert elapsed < 0.15
+    assert "openrouter" in started
+    assert "openrouter" in completed
+
+
+def test_invalid_response_allows_gemini_to_win(monkeypatch):
+    calls = []
+
+    class Provider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name
+            self.last_metadata = {}
+
+        def decide(self, state):
+            calls.append(self.provider)
+            if self.provider == "openrouter":
+                raise ProviderCallError(self.provider, self.model, "schema_validation")
+            return agent_graph.SupervisorDecision.model_validate(_decision())
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: Provider(name))
+    model = StaggeredDecisionModel(["openrouter", "groq", "gemini"], deadline_seconds=0.2, stagger_seconds=0.01)
+    asyncio.run(model.decide_async(_race_state()))
+    assert calls[:2] == ["openrouter", "groq"]
+    assert model.last_attempts[0]["outcome"] == "failed"
+    assert model.last_attempts[1]["winner"] is True
+
+
+def test_shared_deadline_marks_outstanding_attempts(monkeypatch):
+    class SlowProvider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name
+            self.last_metadata = {}
+
+        def decide(self, state):
+            time.sleep(0.3)
+            raise ProviderCallError(self.provider, self.model, "timeout")
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: SlowProvider(name))
+    started_at = time.monotonic()
+    model = StaggeredDecisionModel(["openrouter", "groq", "gemini"], deadline_seconds=0.08, stagger_seconds=0.01)
+    with pytest.raises(ProviderExhaustedError):
+        asyncio.run(model.decide_async(_race_state()))
+    assert time.monotonic() - started_at < 0.2
+    assert all(item["deadline_exhausted"] for item in model.last_attempts)
+
+
+def test_simultaneous_valid_responses_have_one_winner(monkeypatch):
+    class Provider:
+        def __init__(self, name):
+            self.provider = name
+            self.model = name
+            self.last_metadata = {}
+
+        def decide(self, state):
+            time.sleep(0.03)
+            return agent_graph.SupervisorDecision.model_validate(_decision())
+
+    monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: Provider(name))
+    model = StaggeredDecisionModel(["openrouter", "groq", "gemini"], deadline_seconds=0.2, stagger_seconds=0)
+    asyncio.run(model.decide_async(_race_state()))
+    assert sum(item["winner"] for item in model.last_attempts) == 1
