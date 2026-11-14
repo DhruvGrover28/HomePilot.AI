@@ -2,11 +2,7 @@
 
 HomePilot AI is an autonomous household operations manager built for IBM SkillsBuild internship submission goals tied to SDGs 7, 11, 12, and 13.
 
-Phase 1 includes an end-to-end proof of concept:
-- Upload a bank statement CSV.
-- Parse and store transactions in SQLite.
-- Run the Expense Agent to categorize transactions and flag anomalies.
-- View categorized transactions and anomalies on a React dashboard.
+Phase 1 includes the household foundation: SQLite household records, validated reading CSV import, deterministic demo seeding, consumption charts, and CRUD APIs for readings, appliances, inventory, shopping lists and tasks. Agentic features are planned for later phases.
 
 ## Repository Structure
 
@@ -20,8 +16,7 @@ Phase 1 includes an end-to-end proof of concept:
 
 - Frontend: React plus Tailwind CSS (Vite)
 - Backend: FastAPI (Python)
-- Agent: LangChain chain with Google Gemini
-- Database: SQLite
+- Database: SQLite via SQLAlchemy
 
 ## Prerequisites
 
@@ -31,8 +26,7 @@ Phase 1 includes an end-to-end proof of concept:
 
 ## Environment Variables
 
-Backend (create backend/.env locally):
-- GEMINI_API_KEY=your_key_here
+Backend: copy `.env.example` to `.env` if configuration overrides are needed. Phase 1 defaults to mock/offline mode.
 
 Frontend (create frontend/.env locally):
 - VITE_API_BASE_URL=http://localhost:8000
@@ -58,15 +52,7 @@ Frontend (create frontend/.env locally):
 
 ## API
 
-- POST /api/expenses/upload
-  - multipart/form-data with file field (CSV only)
-  - Returns upload_id, categorized transactions, and anomaly counts
-
-Expected CSV headers:
-- date
-- description
-- amount
-- merchant (optional)
+Key endpoints include `GET /api/dashboard/summary`, CRUD endpoints under `/api/readings`, `/api/appliances`, `/api/inventory`, `/api/shopping-list`, and `/api/tasks`, `POST /api/readings/import`, and `POST /api/demo/seed`.
 
 ## Deployment Plan for Phase 1
 

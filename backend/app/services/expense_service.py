@@ -3,8 +3,7 @@ from __future__ import annotations
 import math
 import uuid
 from collections import defaultdict
-from datetime import datetime, timezone
-
+from app import clock
 from app.agents.expense_agent import run_expense_categorization
 from app.db import get_connection
 from app.models.schemas import (
@@ -52,7 +51,7 @@ def process_expense_upload(raw_bytes: bytes) -> UploadResponse:
     anomalies = _detect_anomalies(parsed_transactions)
 
     upload_id = str(uuid.uuid4())
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = clock.now().isoformat()
 
     response_items: list[UploadResponseItem] = []
     with get_connection() as connection:
