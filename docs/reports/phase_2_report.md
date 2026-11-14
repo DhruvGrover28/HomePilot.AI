@@ -27,6 +27,9 @@
 - Authenticated `countTokens` returned HTTP 200.
 - Minimal LangChain generation with a 30-second timeout and no retries returned gRPC `504 DEADLINE_EXCEEDED`.
 - Direct REST `generateContent` with an 8-token limit timed out at 60 seconds and again at 120 seconds without an HTTP response.
+- A minimal request using the recommended current `google-genai` `3.3.0` SDK and its default REST transport also returned sanitized HTTP `504 DEADLINE_EXCEEDED`; this reproduces the failure outside LangChain and gRPC.
+- The diagnostic SDK environment was isolated to the project virtual environment and removed afterward. The project environment was restored to `pydantic 2.8.2`; `pip check` reported no broken requirements.
+- Final installed diagnostic versions were `langchain-google-genai 2.1.12`, `google-ai-generativelanguage 0.12.1`, `grpcio 1.85.1`, `httpx 0.28.1`, `pydantic 2.8.2` and `tenacity 9.1.4`; `google-genai` is not a project dependency.
 - No quota, authentication or provider error response was returned for generation; this is a repeatable generation/request-latency timeout after successful connectivity and model-list checks.
 
 ## Mock mode results
@@ -43,12 +46,13 @@
 ## Live Gemini results
 
 - No live HomePilot agent workflow was run after the minimal generation failure.
+- The current SDK diagnostic did not run electricity-spike, water-only or low-inventory workflows because the required minimal generation gate failed.
 - Electricity-spike, water-only, low-inventory, live decision-flow, live tool-call, live persistence and live recommendation claims remain unverified.
 - `.env` was not modified and remains ignored/untracked.
 
 ## Known limitations
 
-- Live generation needs further provider-side or client-transport investigation despite successful model listing and `countTokens`.
+- Live generation needs further provider-side investigation despite successful model listing and `countTokens`; the same failure was reproduced with LangChain/gRPC, direct REST and the current Google GenAI SDK.
 - Live model-dependent tests cannot be accepted while generation requests time out.
 - Agent runs are stored as completed/stopped records; streaming, cancellation and retry handling are not implemented.
 - Specialists perform no autonomous database writes.
