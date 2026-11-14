@@ -20,8 +20,14 @@
 - Frontend: `npm run build --prefix frontend` passed. Vite emitted its existing non-blocking bundle-size advisory.
 - Pylance import audit is clean for LangChain/Gemini imports after installation.
 - Root `.env` exists, is loaded by backend configuration, is ignored by Git, and is not tracked. Secret values were never printed or committed.
-- Configured live Gemini model check failed with HTTP 404: `gemini-2.5-flash` is no longer available to new users; the provider recommends `gemini-3.8-flash`.
-- A live invocation with the provider-recommended `gemini-3.8-flash` override was attempted without modifying `.env`; it exceeded the local 220-second command window without a response and was stopped.
+- The updated live configuration was loaded safely as `LLM_MODE=live` and `GEMINI_MODEL=gemini-3.8-flash`; the key was present but never printed.
+- Installed provider versions are LangChain `0.3.27`, `langchain-google-genai` `2.1.12`, and LangGraph `0.6.10`.
+- DNS, TCP 443 and HTTPS access to `generativelanguage.googleapis.com` succeeded.
+- Authenticated model listing returned HTTP 200 and listed `gemini-3.8-flash` with `generateContent` and `countTokens` support.
+- Authenticated `countTokens` returned HTTP 200.
+- Minimal LangChain generation with a 30-second timeout and no retries returned gRPC `504 DEADLINE_EXCEEDED`.
+- Direct REST `generateContent` with an 8-token limit timed out at 60 seconds and again at 120 seconds without an HTTP response.
+- No quota, authentication or provider error response was returned for generation; this is a repeatable generation/request-latency timeout after successful connectivity and model-list checks.
 
 ## Mock mode results
 
@@ -36,15 +42,14 @@
 
 ## Live Gemini results
 
-- The root `.env` key was detected without exposing it.
-- The configured `gemini-2.5-flash` model reached the provider but returned HTTP 404 because it is unavailable to new users. The provider response recommended `gemini-3.8-flash`.
-- `.env` was not changed. The provider-recommended `gemini-3.8-flash` was tested only as a process-level override and did not complete within the test window.
-- The override invocation did not complete within the test window, so no live Gemini workflow is declared successful.
+- No live HomePilot agent workflow was run after the minimal generation failure.
+- Electricity-spike, water-only, low-inventory, live decision-flow, live tool-call, live persistence and live recommendation claims remain unverified.
+- `.env` was not modified and remains ignored/untracked.
 
 ## Known limitations
 
-- The configured model must be changed manually in `.env` to a provider-supported model before normal live mode can work.
-- Live model-dependent tests cannot be accepted while the configured model returns 404.
+- Live generation needs further provider-side or client-transport investigation despite successful model listing and `countTokens`.
+- Live model-dependent tests cannot be accepted while generation requests time out.
 - Agent runs are stored as completed/stopped records; streaming, cancellation and retry handling are not implemented.
 - Specialists perform no autonomous database writes.
 - FastAPI and LangGraph emit non-blocking deprecation warnings.
@@ -52,9 +57,9 @@
 
 ## Credentials and manual actions
 
-- Set `GEMINI_MODEL` in the root `.env` to a model available to the account, following the provider's recommendation.
-- Keep `LLM_MODE=mock` for deterministic development and automated tests until the model is corrected.
+- Investigate the provider generation timeout or transport/API compatibility before enabling live workflows.
+- Keep `LLM_MODE=mock` for deterministic development and automated tests until generation completes reliably.
 
 ## Status
 
-The genuine LangGraph orchestration correction is implemented and mock-verified. Live Gemini execution remains blocked by the configured model's provider 404; Phase 2 should remain under review until a supported model is configured and a real workflow succeeds.
+The genuine LangGraph orchestration correction is implemented and mock-verified. Live Gemini execution remains blocked by repeatable generation timeouts; Phase 2 is not fully verified and remains under review.
