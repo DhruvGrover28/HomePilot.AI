@@ -74,3 +74,14 @@ class Task(Timestamped, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
+
+
+class AgentRun(Timestamped, Base):
+    __tablename__ = "agent_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    goal: Mapped[str] = mapped_column(Text, nullable=False)
+    domains: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    trace_json: Mapped[str] = mapped_column(Text, nullable=False)
+    recommendations_json: Mapped[str] = mapped_column(Text, nullable=False)

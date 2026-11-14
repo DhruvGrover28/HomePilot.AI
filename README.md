@@ -57,7 +57,9 @@ Run backend tests from the backend module root:
 
 ## API
 
-Key endpoints include `GET /api/dashboard/summary`, CRUD endpoints under `/api/readings`, `/api/appliances`, `/api/inventory`, `/api/shopping-list`, and `/api/tasks`, `POST /api/readings/import`, and `POST /api/demo/seed`.
+Key endpoints include `GET /api/dashboard/summary`, CRUD endpoints under `/api/readings`, `/api/appliances`, `/api/inventory`, `/api/shopping-list`, and `/api/tasks`, `POST /api/readings/import`, `POST /api/demo/seed`, `POST /api/agents/runs`, and `GET /api/agents/runs/{run_id}`.
+
+Phase 2 agent analysis is deterministic and offline when `LLM_MODE=mock` (the default).
 
 ## Deployment Plan for Phase 1
 

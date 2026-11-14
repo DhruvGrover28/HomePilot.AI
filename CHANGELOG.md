@@ -1,5 +1,10 @@
 # HomePilot AI Changelog
 
+## Phase 2 - 2026-11-14
+- Added bounded Supervisor routing for energy, maintenance and inventory analyses.
+- Added persisted agent runs, trace/recommendation APIs and dashboard analysis cards.
+- Kept the verified path deterministic and mock-safe; live Gemini remains pending credentials and provider setup.
+
 ## Phase 1 - 2026-11-14
 - Reworked the finance prototype into the HomePilot household foundation.
 - Added SQLAlchemy SQLite household models, configuration, injectable clock and simulated seed data.

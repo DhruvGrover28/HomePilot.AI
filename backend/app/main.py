@@ -7,6 +7,7 @@ from app import clock
 from app.config import get_settings
 from app.db import initialize_database
 from app.routers.household import router as household_router
+from app.routers.agents import router as agents_router
 from app.seed import seed_demo
 
 settings = get_settings()
@@ -34,6 +35,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(household_router)
+app.include_router(agents_router)
 
 
 @app.post("/api/demo/seed")

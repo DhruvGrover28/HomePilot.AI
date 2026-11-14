@@ -28,6 +28,7 @@ function ConsumptionChart({ title, rows, color }) {
 
 export default function App() {
   const [summary, setSummary] = useState(null);
+  const [agentRun, setAgentRun] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -53,6 +54,21 @@ export default function App() {
     }
   }
 
+  async function runAnalysis() {
+    try {
+      setError("");
+      const response = await fetch(`${API_BASE_URL}/api/agents/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goal: "Review household operations and identify priorities." }),
+      });
+      if (!response.ok) throw new Error("Unable to run household analysis.");
+      setAgentRun(await response.json());
+    } catch (runError) {
+      setError(runError.message);
+    }
+  }
+
   useEffect(() => { loadSummary(); }, []);
 
   if (loading) return <main className="p-8">Loading HomePilot...</main>;
@@ -64,7 +80,10 @@ export default function App() {
           <h1 className="mt-1 text-3xl font-semibold">HomePilot AI</h1>
           <p className="mt-2 text-slate-600">Monitor consumption, maintenance and supplies from one place.</p>
         </div>
-        <button onClick={seedDemo} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Seed simulated demo</button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={runAnalysis} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white">Run household analysis</button>
+          <button onClick={seedDemo} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Seed simulated demo</button>
+        </div>
       </header>
       {error && <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-700">{error}</div>}
       {summary && (
@@ -89,6 +108,27 @@ export default function App() {
               ))}
             </div>
           </section>
+          {agentRun && (
+            <section className="rounded-xl border border-teal-200 bg-teal-50 p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-lg font-semibold">Household analysis</h2>
+                <span className="text-xs uppercase tracking-wide text-teal-800">{agentRun.mode} mode</span>
+              </div>
+              <p className="mt-1 text-sm text-slate-600">{agentRun.goal}</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {agentRun.recommendations.map((recommendation) => (
+                  <article key={recommendation.domain} className="rounded-lg bg-white p-4 shadow-sm">
+                    <h3 className="font-semibold">{recommendation.title}</h3>
+                    <p className="mt-1 text-sm text-slate-600">{recommendation.summary}</p>
+                    <p className="mt-3 text-sm text-slate-800">{recommendation.recommendation}</p>
+                  </article>
+                ))}
+              </div>
+              <p className="mt-4 text-xs text-slate-500">
+                Routed through: {agentRun.trace.map((step) => step.node).join(" -> ")}
+              </p>
+            </section>
+          )}
         </>
       )}
     </main>
