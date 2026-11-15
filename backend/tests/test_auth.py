@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app import clock
 
 from app.db import initialize_database
-from app.db.models import User
+from app.db.models import Household, User
 from app.db.session import SessionLocal
 from app.main import app
 
@@ -484,3 +484,149 @@ def test_comprehensive_two_household_isolation_and_unowned_fail_closed(monkeypat
         assert del_user.status_code == 204
         assert h1_client.get("/api/auth/me").status_code == 401
         assert h2_client.get("/api/auth/me").status_code == 200
+
+
+def test_sqlite_foreign_keys_are_enforced():
+    """Verify that foreign key constraints are strictly enforced in SQLite."""
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    initialize_database()
+    with SessionLocal() as session:
+        orphan_household = Household(
+            id=str(uuid4()),
+            name="Orphan Household",
+            owner_id="non-existent-user-id",
+            created_at=clock.now(),
+        )
+        session.add(orphan_household)
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
+
+
+def test_registration_persists_user_before_household_and_sets_correct_owner():
+    """Verify registration creates user first, links household, and sets owner_id."""
+    initialize_database()
+    email = f"order_{uuid4()}@example.com"
+    payload = {
+        "full_name": "Sequenced User",
+        "email": email,
+        "password": "valid_secure_pass123",
+        "confirm_password": "valid_secure_pass123",
+    }
+    with TestClient(app) as client:
+        res = client.post("/api/auth/register", json=payload)
+        assert res.status_code == 201
+        data = res.json()
+        user_id = data["user"]["id"]
+        household_id = data["household_id"]
+
+    with SessionLocal() as session:
+        user = session.get(User, user_id)
+        assert user is not None
+        assert user.email == email
+        assert user.full_name == "Sequenced User"
+
+        household = session.get(Household, household_id)
+        assert household is not None
+        assert household.owner_id == user.id
+
+
+def test_registration_atomic_rollback_on_failure(monkeypatch):
+    """Verify atomicity: if an error occurs during registration, user and household are rolled back."""
+    import app.services.auth as auth_service
+
+    initialize_database()
+    email = f"fail_{uuid4()}@example.com"
+    payload = {
+        "full_name": "Rollback Test User",
+        "email": email,
+        "password": "valid_secure_pass123",
+        "confirm_password": "valid_secure_pass123",
+    }
+
+    # Simulate failure right after household is added/flushed
+    def fail_create_session(session, user_id, response):
+        raise RuntimeError("Simulated transaction failure")
+
+    monkeypatch.setattr(auth_service, "_create_session", fail_create_session)
+
+    with TestClient(app) as client:
+        import pytest
+        with pytest.raises(RuntimeError, match="Simulated transaction failure"):
+            client.post("/api/auth/register", json=payload)
+
+    # Verify atomic rollback left no orphaned user in the database
+    with SessionLocal() as session:
+        persisted_user = session.query(User).filter(User.email == email).first()
+        assert persisted_user is None
+
+
+def test_registration_password_mismatch_returns_422():
+    initialize_database()
+    payload = {
+        "full_name": "Mismatch User",
+        "email": f"mismatch_{uuid4()}@example.com",
+        "password": "valid_secure_pass123",
+        "confirm_password": "different_pass123",
+    }
+    with TestClient(app) as client:
+        res = client.post("/api/auth/register", json=payload)
+        assert res.status_code == 422
+        assert "Passwords do not match" in res.text
+
+
+def test_registration_preserves_passwords_with_exact_whitespace():
+    """Ensure intentional leading/trailing spaces in passwords are kept exactly."""
+    initialize_database()
+    email = f"spaces_{uuid4()}@example.com"
+    spaced_pass = "   spaced passphrase 123   "
+    payload = {
+        "full_name": "Spaced Password User",
+        "email": email,
+        "password": spaced_pass,
+        "confirm_password": spaced_pass,
+    }
+    with TestClient(app) as client:
+        registered = client.post("/api/auth/register", json=payload)
+        assert registered.status_code == 201
+
+        # Login with exact spaced password must succeed
+        login_exact = client.post("/api/auth/login", json={"email": email, "password": spaced_pass})
+        assert login_exact.status_code == 200
+
+        # Login with stripped password must fail (spaces were preserved, not stripped)
+        login_stripped = client.post(
+            "/api/auth/login",
+            json={"email": email, "password": spaced_pass.strip()},
+        )
+        assert login_stripped.status_code == 401
+
+
+def test_registration_normalizes_full_name_and_email():
+    """Verify full_name and email are safely trimmed/lowercased, and blank full_name is rejected."""
+    initialize_database()
+    raw_email = f"  Trimmed_{uuid4()}@Example.COM  "
+    expected_email = raw_email.strip().lower()
+    payload = {
+        "full_name": "  Trimmed User  ",
+        "email": raw_email,
+        "password": "valid_secure_pass123",
+        "confirm_password": "valid_secure_pass123",
+    }
+    with TestClient(app) as client:
+        res = client.post("/api/auth/register", json=payload)
+        assert res.status_code == 201
+        assert res.json()["user"]["full_name"] == "Trimmed User"
+        assert res.json()["user"]["email"] == expected_email
+
+        # Blank/whitespace-only full_name must be rejected with 422
+        blank_name_payload = {
+            "full_name": "    ",
+            "email": f"blank_{uuid4()}@example.com",
+            "password": "valid_secure_pass123",
+            "confirm_password": "valid_secure_pass123",
+        }
+        res_blank = client.post("/api/auth/register", json=blank_name_payload)
+        assert res_blank.status_code == 422

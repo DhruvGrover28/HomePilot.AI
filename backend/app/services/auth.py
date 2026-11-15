@@ -145,26 +145,34 @@ def register_user(payload, response: Response) -> AuthResponse:
     email = _email(str(payload.email))
     now = clock.now()
     with SessionLocal() as session:
-        if session.scalar(select(User).where(User.email == email)):
-            raise HTTPException(409, "An account with that email already exists.")
-        user = User(
-            id=str(uuid4()),
-            full_name=payload.full_name.strip(),
-            email=email,
-            password_hash=_hash_password(payload.password),
-            created_at=now,
-        )
-        household = Household(
-            id=str(uuid4()),
-            name=f"{user.full_name}'s household",
-            owner_id=user.id,
-            created_at=now,
-        )
-        session.add_all([user, household])
-        session.flush()
-        _create_session(session, user.id, response)
-        session.commit()
-        return _user_response(user, household)
+        try:
+            if session.scalar(select(User).where(User.email == email)):
+                raise HTTPException(409, "An account with that email already exists.")
+            user = User(
+                id=str(uuid4()),
+                full_name=payload.full_name.strip(),
+                email=email,
+                password_hash=_hash_password(payload.password),
+                created_at=now,
+            )
+            session.add(user)
+            session.flush()
+
+            household = Household(
+                id=str(uuid4()),
+                name=f"{user.full_name}'s household",
+                owner_id=user.id,
+                created_at=now,
+            )
+            session.add(household)
+            session.flush()
+
+            _create_session(session, user.id, response)
+            session.commit()
+            return _user_response(user, household)
+        except Exception:
+            session.rollback()
+            raise
 
 
 def login_user(payload, response: Response) -> AuthResponse:
@@ -209,10 +217,33 @@ def revoke_session(request: Request, response: Response) -> None:
 
 def delete_user_account(user_id: str, request: Request, response: Response) -> None:
     from sqlalchemy import delete
+    from app.db.models import (
+        AgentRun,
+        Appliance,
+        AssistantMessage,
+        InventoryItem,
+        InventoryLog,
+        MonitoringIssue,
+        Reading,
+        ShoppingListItem,
+        Task,
+    )
     revoke_session(request, response)
     with SessionLocal() as session:
         user = session.get(User, user_id)
         if user:
+            households = session.scalars(select(Household).where(Household.owner_id == user_id)).all()
+            for h in households:
+                session.execute(delete(AssistantMessage).where(AssistantMessage.household_id == h.id))
+                session.execute(delete(Reading).where(Reading.household_id == h.id))
+                session.execute(delete(InventoryLog).where(InventoryLog.household_id == h.id))
+                session.execute(delete(InventoryItem).where(InventoryItem.household_id == h.id))
+                session.execute(delete(ShoppingListItem).where(ShoppingListItem.household_id == h.id))
+                session.execute(delete(Task).where(Task.household_id == h.id))
+                session.execute(delete(Appliance).where(Appliance.household_id == h.id))
+                session.execute(delete(AgentRun).where(AgentRun.household_id == h.id))
+                session.execute(delete(MonitoringIssue).where(MonitoringIssue.household_id == h.id))
+                session.delete(h)
             session.execute(delete(UserSession).where(UserSession.user_id == user_id))
             session.delete(user)
             session.commit()

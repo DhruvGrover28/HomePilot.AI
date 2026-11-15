@@ -3,7 +3,7 @@ import io
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app import clock
 from app.db.models import Appliance, InventoryItem, InventoryLog, Reading, ShoppingListItem, Task
@@ -261,6 +261,7 @@ def delete_inventory(item_id: int, household=Depends(get_current_household)) -> 
         if row is None:
             raise HTTPException(404, "Inventory item not found.")
         _owned(row, household)
+        session.execute(delete(InventoryLog).where(InventoryLog.item_id == item_id))
         session.delete(row)
         session.commit()
     monitoring_runtime.trigger_event(["inventory"], household.id if household else None)
