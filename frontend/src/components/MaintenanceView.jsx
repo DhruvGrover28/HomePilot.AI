@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiJson, apiFetch } from "../api";
+import { Wrench, X } from "lucide-react";
 
 export default function MaintenanceView({ onDataChanged }) {
   const [appliances, setAppliances] = useState([]);
@@ -159,8 +160,8 @@ export default function MaintenanceView({ onDataChanged }) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🔧</span>
+          <div className="flex items-center gap-2.5">
+            <Wrench className="w-6 h-6 text-amber-500" />
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Maintenance Specialist Domain</h1>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -220,10 +221,10 @@ export default function MaintenanceView({ onDataChanged }) {
                     )}
                     <button
                       onClick={() => handleDeleteAppliance(app.id)}
-                      className="text-slate-400 hover:text-red-500 text-xs px-1"
+                      className="text-slate-400 hover:text-red-500 text-xs p-1"
                       title="Delete appliance"
                     >
-                      ✕
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -322,7 +323,7 @@ export default function MaintenanceView({ onDataChanged }) {
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">Register Household Appliance</h3>
-              <button onClick={() => setShowApplianceModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowApplianceModal(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-4 h-4" /></button>
             </div>
 
             <form onSubmit={handleAddAppliance} className="space-y-3 text-xs">
@@ -425,7 +426,7 @@ export default function MaintenanceView({ onDataChanged }) {
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">Create Maintenance Task</h3>
-              <button onClick={() => setShowTaskModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowTaskModal(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-4 h-4" /></button>
             </div>
 
             <form onSubmit={handleAddTask} className="space-y-3 text-xs">

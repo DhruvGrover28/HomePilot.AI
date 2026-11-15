@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { apiJson, apiFetch } from "../api";
+import { Zap, FileText, Upload, FileSpreadsheet, Download, AlertTriangle, Info, X } from "lucide-react";
 
 export default function EnergyView({ onDataChanged }) {
   const [readings, setReadings] = useState([]);
@@ -258,8 +259,8 @@ export default function EnergyView({ onDataChanged }) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">⚡</span>
+          <div className="flex items-center gap-2.5">
+            <Zap className="w-6 h-6 text-amber-500" />
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Energy Specialist Domain</h1>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -269,16 +270,18 @@ export default function EnergyView({ onDataChanged }) {
 
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => { setError(""); setShowBillModal(true); setBillResult(null); setBillFile(null); }}
+            onClick={() => { setError(""); setShowBillModal(true); setExtractedBill(null); setBillFile(null); }}
             className="px-3.5 py-2 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition flex items-center gap-1.5"
           >
-            <span>📄</span> Upload Bill
+            <FileText className="w-3.5 h-3.5" />
+            <span>Upload Bill</span>
           </button>
           <button
             onClick={() => { setError(""); setShowImportModal(true); }}
-            className="px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition"
+            className="px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5"
           >
-            📂 Import CSV
+            <Upload className="w-3.5 h-3.5" />
+            <span>Import CSV</span>
           </button>
           <button
             onClick={() => { setError(""); setShowAddModal(true); }}
@@ -292,7 +295,7 @@ export default function EnergyView({ onDataChanged }) {
       {billSuccessMsg && (
         <div className="rounded-xl bg-emerald-950/50 border border-emerald-700/60 p-4 text-xs text-emerald-300 flex items-center justify-between">
           <span>{billSuccessMsg}</span>
-          <button onClick={() => setBillSuccessMsg("")} className="text-emerald-400 hover:text-emerald-200 font-bold ml-2">✕</button>
+          <button onClick={() => setBillSuccessMsg("")} className="text-emerald-400 hover:text-emerald-200 font-bold ml-2 p-1" aria-label="Close message"><X className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -408,7 +411,8 @@ export default function EnergyView({ onDataChanged }) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>📑</span> Digitized Electricity Bills & Trend Analytics
+              <FileSpreadsheet className="w-4 h-4 text-amber-500" />
+              <span>Digitized Electricity Bills & Trend Analytics</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Parsed utility statements, normalized billing cycles, and automated cost-per-kWh analytics.
@@ -426,7 +430,7 @@ export default function EnergyView({ onDataChanged }) {
           <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-900 dark:text-amber-300 space-y-1">
             <p className="font-semibold uppercase tracking-wider text-[11px] text-amber-700 dark:text-amber-400">Analysis Note</p>
             {billAnalysis.warnings.map((w, idx) => (
-              <p key={idx}>ℹ️ {w}</p>
+              <p key={idx} className="flex items-center gap-1.5"><Info className="w-3.5 h-3.5 text-blue-500 shrink-0" /><span>{w}</span></p>
             ))}
           </div>
         )}
@@ -435,7 +439,7 @@ export default function EnergyView({ onDataChanged }) {
           <div className="p-3.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-900 dark:text-red-300 space-y-1">
             <p className="font-semibold uppercase tracking-wider text-[11px] text-red-700 dark:text-red-400">Consumption Anomaly Detected</p>
             {billAnalysis.anomalies.map((a, idx) => (
-              <p key={idx}>⚠️ Period {a.period} exceeded baseline daily consumption by +{a.spike_pct}% ({a.daily_rate} kWh/day vs avg {a.baseline_daily_rate} kWh/day).</p>
+              <p key={idx} className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" /><span>Period {a.period} exceeded baseline daily consumption by +{a.spike_pct}% ({a.daily_rate} kWh/day vs avg {a.baseline_daily_rate} kWh/day).</span></p>
             ))}
           </div>
         )}
@@ -513,9 +517,10 @@ export default function EnergyView({ onDataChanged }) {
                       <td className="py-2.5 px-4 text-right">
                         <button
                           onClick={() => handleDownloadBillCsv(b.id, b.bill_number)}
-                          className="px-2.5 py-1 text-[11px] rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold transition inline-flex items-center gap-1"
+                          className="px-2.5 py-1 text-[11px] rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold transition inline-flex items-center gap-1.5"
                         >
-                          <span>📥</span> Download CSV
+                          <Download className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                          <span>Download CSV</span>
                         </button>
                       </td>
                     </tr>
@@ -533,7 +538,7 @@ export default function EnergyView({ onDataChanged }) {
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">Add Electricity Reading</h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-4 h-4" /></button>
             </div>
 
             <form onSubmit={handleAddReading} className="space-y-3 text-xs">
@@ -636,7 +641,7 @@ export default function EnergyView({ onDataChanged }) {
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">Import Readings from CSV</h3>
-              <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-4 h-4" /></button>
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -678,8 +683,8 @@ export default function EnergyView({ onDataChanged }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">📄</span>
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-6 h-6 text-indigo-500" />
                 <div>
                   <h3 className="font-bold text-base text-slate-900 dark:text-white">Digitize Electricity Bill</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -690,8 +695,9 @@ export default function EnergyView({ onDataChanged }) {
               <button
                 onClick={() => { setShowBillModal(false); setExtractedBill(null); setBillFile(null); }}
                 className="text-slate-400 hover:text-slate-600 font-bold p-1"
+                aria-label="Close modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -701,7 +707,7 @@ export default function EnergyView({ onDataChanged }) {
                 <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-8 text-center space-y-3">
                   {billFile ? (
                     <div className="space-y-2">
-                      <div className="text-3xl">📄</div>
+                      <FileText className="w-10 h-10 text-indigo-500 mx-auto" />
                       <p className="font-bold text-slate-900 dark:text-white">{billFile.name}</p>
                       <p className="text-[11px] text-slate-400 font-mono">{(billFile.size / 1024).toFixed(1)} KB</p>
                       <button
@@ -714,7 +720,7 @@ export default function EnergyView({ onDataChanged }) {
                     </div>
                   ) : (
                     <div>
-                      <div className="text-3xl mb-2">📑</div>
+                      <FileSpreadsheet className="w-10 h-10 text-indigo-400 mx-auto mb-2" />
                       <p className="font-semibold text-slate-700 dark:text-slate-300">Select or drop your electricity bill</p>
                       <p className="text-[11px] text-slate-400 mt-1">Supports PDF, JPG, JPEG, PNG, WEBP (up to 10 MB)</p>
                       <label className="mt-3 inline-block px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold cursor-pointer transition shadow-xs">
@@ -770,7 +776,7 @@ export default function EnergyView({ onDataChanged }) {
                 {extractedBill.warnings?.length > 0 && (
                   <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-300 space-y-1">
                     {extractedBill.warnings.map((w, idx) => (
-                      <p key={idx}>⚠️ {w}</p>
+                      <p key={idx} className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" /><span>{w}</span></p>
                     ))}
                   </div>
                 )}

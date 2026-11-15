@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { apiJson, apiFetch } from "../api";
+import { MessageSquare, Cpu } from "lucide-react";
 
 export default function AssistantView({ onInspectRun }) {
   const [messages, setMessages] = useState([]);
@@ -133,8 +134,8 @@ export default function AssistantView({ onInspectRun }) {
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-            <div className="h-12 w-12 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center text-2xl font-bold">
-              💬
+            <div className="h-12 w-12 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+              <MessageSquare className="w-6 h-6" />
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
@@ -179,9 +180,10 @@ export default function AssistantView({ onInspectRun }) {
                     <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
                       <button
                         onClick={() => onInspectRun(m.metadata.run)}
-                        className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1"
+                        className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1.5"
                       >
-                        <span>🧠 Inspect Linked Agent Run (#{m.metadata.run.id}) →</span>
+                        <Cpu className="w-3.5 h-3.5" />
+                        <span>Inspect Linked Agent Run (#{m.metadata.run.id}) →</span>
                       </button>
                     </div>
                   )}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiJson, apiFetch } from "./api";
+import { X } from "lucide-react";
 import Navigation from "./components/Navigation";
 import PublicLanding from "./components/PublicLanding";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -294,8 +295,8 @@ export default function App() {
         {bannerError && (
           <div className="m-6 mb-0 p-4 rounded-xl bg-red-950/60 border border-red-700/60 text-xs text-red-300 flex items-center justify-between">
             <span>{bannerError}</span>
-            <button onClick={() => setBannerError("")} className="text-red-400 hover:text-white text-xs">
-              ✕
+            <button onClick={() => setBannerError("")} className="text-red-400 hover:text-white p-1" aria-label="Close banner">
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         )}

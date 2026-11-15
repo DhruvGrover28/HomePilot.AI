@@ -1,4 +1,19 @@
 import React, { useState } from "react";
+import {
+  LayoutDashboard,
+  Zap,
+  Droplets,
+  Wrench,
+  Package,
+  Bell,
+  Cpu,
+  MessageSquare,
+  Settings,
+  Menu,
+  X,
+  LogOut,
+  Activity
+} from "lucide-react";
 
 export default function Navigation({
   currentView,
@@ -12,15 +27,15 @@ export default function Navigation({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "energy", label: "Energy", icon: "⚡" },
-    { id: "water", label: "Water", icon: "💧" },
-    { id: "maintenance", label: "Maintenance", icon: "🔧" },
-    { id: "inventory", label: "Inventory", icon: "📦" },
-    { id: "monitoring", label: "Monitoring", icon: "🔔", badge: monitoringCount > 0 ? monitoringCount : null },
-    { id: "investigations", label: "Investigations", icon: "🧠" },
-    { id: "assistant", label: "Assistant", icon: "💬" },
-    { id: "settings", label: "Settings", icon: "⚙️" },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "energy", label: "Energy", icon: Zap },
+    { id: "water", label: "Water", icon: Droplets },
+    { id: "maintenance", label: "Maintenance", icon: Wrench },
+    { id: "inventory", label: "Inventory", icon: Package },
+    { id: "monitoring", label: "Monitoring", icon: Bell, badge: monitoringCount > 0 ? monitoringCount : null },
+    { id: "investigations", label: "Investigations", icon: Cpu },
+    { id: "assistant", label: "Assistant", icon: MessageSquare },
+    { id: "settings", label: "Settings", icon: Settings },
   ];
 
   const handleSelectView = (viewId) => {
@@ -50,10 +65,10 @@ export default function Navigation({
           {/* Mobile Hamburger Toggle Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
+            className="md:hidden p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
             aria-label="Toggle menu"
           >
-            {mobileMenuOpen ? "✕" : "☰"}
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
 
@@ -61,6 +76,7 @@ export default function Navigation({
         <nav className={`p-3 space-y-1 ${mobileMenuOpen ? "block" : "hidden md:block"}`}>
           {navItems.map((item) => {
             const isActive = currentView === item.id;
+            const IconComponent = item.icon;
             return (
               <button
                 key={item.id}
@@ -72,7 +88,7 @@ export default function Navigation({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-base">{item.icon}</span>
+                  <IconComponent className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-400"}`} />
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
@@ -94,7 +110,8 @@ export default function Navigation({
           onClick={onQuickRunMonitoring}
           className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition"
         >
-          <span>⚡ Check Monitoring</span>
+          <Activity className="w-3.5 h-3.5 text-teal-400" />
+          <span>Check Monitoring</span>
         </button>
 
         <div className="flex items-center justify-between pt-2 text-xs">
@@ -107,9 +124,7 @@ export default function Navigation({
             title="Log out"
             className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-red-400 transition"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>

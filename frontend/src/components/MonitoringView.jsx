@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Bell, Activity, X } from "lucide-react";
 
 export default function MonitoringView({
   monitoringIssues,
@@ -26,8 +27,8 @@ export default function MonitoringView({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🔔</span>
+          <div className="flex items-center gap-2.5">
+            <Bell className="w-6 h-6 text-purple-500" />
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Activity & Notification Centre</h1>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -38,9 +39,10 @@ export default function MonitoringView({
         <button
           onClick={onRunMonitoring}
           disabled={working}
-          className="px-4 py-2.5 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-500 text-white shadow-sm transition disabled:opacity-50"
+          className="px-4 py-2.5 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-500 text-white shadow-sm transition disabled:opacity-50 flex items-center gap-1.5"
         >
-          {working ? "Running Sweep..." : "⚡ Run Monitoring Sweep"}
+          <Activity className="w-3.5 h-3.5" />
+          <span>{working ? "Running Sweep..." : "Run Monitoring Sweep"}</span>
         </button>
       </div>
 
@@ -178,9 +180,10 @@ export default function MonitoringView({
               </div>
               <button
                 onClick={() => setSelectedIssue(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+                aria-label="Close modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiJson } from "../api";
+import { Cpu, Zap } from "lucide-react";
 
 export default function InvestigationsView({ activeRun, onSelectRun }) {
   const [runs, setRuns] = useState([]);
@@ -71,8 +72,8 @@ export default function InvestigationsView({ activeRun, onSelectRun }) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🧠</span>
+          <div className="flex items-center gap-2.5">
+            <Cpu className="w-6 h-6 text-indigo-500" />
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Agentic Investigations</h1>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -96,7 +97,8 @@ export default function InvestigationsView({ activeRun, onSelectRun }) {
       {/* Launch New Investigation Form */}
       <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
         <h2 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-          <span>⚡</span> Launch New Agentic Investigation
+          <Zap className="w-4 h-4 text-amber-500" />
+          <span>Launch New Agentic Investigation</span>
         </h2>
 
         <form onSubmit={handleLaunchRun} className="space-y-3">

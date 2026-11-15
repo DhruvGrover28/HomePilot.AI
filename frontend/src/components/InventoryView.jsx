@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiJson, apiFetch } from "../api";
+import { Package, Camera, AlertTriangle, Check, Sparkles, X } from "lucide-react";
 
 export default function InventoryView({ onDataChanged }) {
   const [inventory, setInventory] = useState([]);
@@ -281,8 +282,8 @@ export default function InventoryView({ onDataChanged }) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">📦</span>
+          <div className="flex items-center gap-2.5">
+            <Package className="w-6 h-6 text-emerald-500" />
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Inventory Specialist Domain</h1>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -295,7 +296,8 @@ export default function InventoryView({ onDataChanged }) {
             onClick={() => { setError(""); setShowScanModal(true); setScanResult(null); setScanFile(null); setScanPreview(null); }}
             className="px-3.5 py-2 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-500 text-white shadow-sm transition flex items-center gap-1.5"
           >
-            <span>📷</span> Scan Inventory
+            <Camera className="w-3.5 h-3.5" />
+            <span>Scan Inventory</span>
           </button>
           <button
             onClick={() => { setError(""); setShowShoppingModal(true); }}
@@ -315,7 +317,7 @@ export default function InventoryView({ onDataChanged }) {
       {scanSuccessMsg && (
         <div className="rounded-xl bg-emerald-950/50 border border-emerald-700/60 p-4 text-xs text-emerald-300 flex items-center justify-between">
           <span>{scanSuccessMsg}</span>
-          <button onClick={() => setScanSuccessMsg("")} className="text-emerald-400 hover:text-emerald-200 font-bold ml-2">✕</button>
+          <button onClick={() => setScanSuccessMsg("")} className="text-emerald-400 hover:text-emerald-200 font-bold ml-2 p-1" aria-label="Close message"><X className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -328,8 +330,8 @@ export default function InventoryView({ onDataChanged }) {
       {/* Low stock warning banner */}
       {lowItems.length > 0 && (
         <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-base">⚠️</span>
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
             <div>
               <p className="text-xs font-bold text-red-900 dark:text-red-300">
                 {lowItems.length} item(s) below reorder threshold
@@ -399,10 +401,10 @@ export default function InventoryView({ onDataChanged }) {
                       )}
                       <button
                         onClick={() => handleDeleteItem(item.id)}
-                        className="text-slate-400 hover:text-red-500 text-xs px-1"
+                        className="text-slate-400 hover:text-red-500 text-xs p-1"
                         title="Delete item"
                       >
-                        ✕
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -508,7 +510,7 @@ export default function InventoryView({ onDataChanged }) {
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">Track Supply Item</h3>
-              <button onClick={() => setShowItemModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowItemModal(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-4 h-4" /></button>
             </div>
 
             <form onSubmit={handleAddItem} className="space-y-3 text-xs">
@@ -614,7 +616,7 @@ export default function InventoryView({ onDataChanged }) {
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">Add Shopping Item</h3>
-              <button onClick={() => setShowShoppingModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowShoppingModal(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-4 h-4" /></button>
             </div>
 
             <form onSubmit={handleAddShopping} className="space-y-3 text-xs">
@@ -692,8 +694,8 @@ export default function InventoryView({ onDataChanged }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">📷</span>
+              <div className="flex items-center gap-2.5">
+                <Camera className="w-6 h-6 text-teal-500" />
                 <div>
                   <h3 className="font-bold text-base text-slate-900 dark:text-white">Computer Vision Inventory Scanner</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -704,8 +706,9 @@ export default function InventoryView({ onDataChanged }) {
               <button
                 onClick={() => { setShowScanModal(false); setScanResult(null); setScanFile(null); }}
                 className="text-slate-400 hover:text-slate-600 font-bold p-1"
+                aria-label="Close modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -727,7 +730,7 @@ export default function InventoryView({ onDataChanged }) {
                     </div>
                   ) : (
                     <div>
-                      <div className="text-3xl mb-2">📸</div>
+                      <Camera className="w-10 h-10 text-teal-500 mx-auto mb-2" />
                       <p className="font-semibold text-slate-700 dark:text-slate-300">Select or drop a photograph of your shelf, fridge, or pantry</p>
                       <p className="text-[11px] text-slate-400 mt-1">Supports JPG, PNG, WEBP (up to 10 MB)</p>
                       <label className="mt-3 inline-block px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold cursor-pointer transition shadow-xs">
@@ -777,7 +780,7 @@ export default function InventoryView({ onDataChanged }) {
                   <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-300 space-y-1">
                     <p className="font-semibold text-[11px] uppercase tracking-wider text-amber-700 dark:text-amber-400">Detection Notes / Warnings</p>
                     {scanResult.warnings.map((w, idx) => (
-                      <p key={idx}>⚠️ {w}</p>
+                      <p key={idx} className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" /><span>{w}</span></p>
                     ))}
                   </div>
                 )}
@@ -849,11 +852,13 @@ export default function InventoryView({ onDataChanged }) {
                             <td className="p-2.5">
                               {item.matched_item_id ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
-                                  ✓ Matched (Current: {item.existing_quantity})
+                                  <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                  <span>Matched (Current: {item.existing_quantity})</span>
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
-                                  ✨ New Item
+                                  <Sparkles className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                  <span>New Item</span>
                                 </span>
                               )}
                               {item.confidence && (
@@ -868,19 +873,20 @@ export default function InventoryView({ onDataChanged }) {
                                 onChange={(e) => updateReconcileField(idx, "action", e.target.value)}
                                 className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-medium"
                               >
-                                {item.matched_item_id && <option value="add">➕ Add to Stock (+{item.quantity})</option>}
-                                {item.matched_item_id && <option value="replace">🔄 Replace Count (Exact: {item.quantity})</option>}
-                                <option value="new">✨ Create as New Item</option>
-                                <option value="ignore">✕ Ignore / Skip</option>
+                                {item.matched_item_id && <option value="add">Add to Stock (+{item.quantity})</option>}
+                                {item.matched_item_id && <option value="replace">Replace Count (Exact: {item.quantity})</option>}
+                                <option value="new">Create as New Item</option>
+                                <option value="ignore">Ignore / Skip</option>
                               </select>
                             </td>
                             <td className="p-2.5 text-right">
                               <button
                                 type="button"
                                 onClick={() => removeReconcileItem(idx)}
-                                className="text-red-400 hover:text-red-600 font-bold px-1"
+                                className="text-red-400 hover:text-red-600 font-bold p-1"
+                                title="Remove item"
                               >
-                                ✕
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </td>
                           </tr>

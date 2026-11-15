@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { apiJson, apiFetch } from "../api";
+import { Settings, Database } from "lucide-react";
 
 export default function SettingsView({
   user,
@@ -128,8 +129,8 @@ export default function SettingsView({
     <div className="space-y-6 max-w-4xl">
       {/* Header */}
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">⚙️</span>
+        <div className="flex items-center gap-2.5">
+          <Settings className="w-6 h-6 text-slate-400" />
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">Account & Household Settings</h1>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -312,9 +313,10 @@ export default function SettingsView({
         <button
           onClick={handleTriggerSeedDemo}
           disabled={seeding}
-          className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 font-bold text-xs text-white shadow-sm transition disabled:opacity-50"
+          className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 font-bold text-xs text-white shadow-sm transition disabled:opacity-50 flex items-center gap-1.5"
         >
-          {seeding ? "Populating Demo Data..." : "🌱 Seed Demonstration Telemetry"}
+          <Database className="w-3.5 h-3.5" />
+          <span>{seeding ? "Populating Demo Data..." : "Seed Demonstration Telemetry"}</span>
         </button>
       </div>
 

@@ -1,5 +1,6 @@
 import React from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
+import { Zap, Droplets, Wrench, Package, Brain, Activity, Check, X } from "lucide-react";
 
 export default function DashboardView({
   summary,
@@ -45,16 +46,18 @@ export default function DashboardView({
           <button
             onClick={onRunMonitoring}
             disabled={workingAction}
-            className="px-4 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition"
+            className="px-4 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5"
           >
-            {workingAction === "monitoring" ? "Checking..." : "⚡ Run Monitoring Check"}
+            <Activity className="w-3.5 h-3.5 text-teal-500" />
+            <span>{workingAction === "monitoring" ? "Checking..." : "Run Monitoring Check"}</span>
           </button>
           <button
             onClick={() => onRunAnalysis()}
             disabled={workingAction}
-            className="px-4 py-2 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-500 text-white shadow-sm transition"
+            className="px-4 py-2 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-500 text-white shadow-sm transition flex items-center gap-1.5"
           >
-            {workingAction === "analysis" ? "Analyzing..." : "🧠 Run Full Agent Analysis"}
+            <Brain className="w-3.5 h-3.5" />
+            <span>{workingAction === "analysis" ? "Analyzing..." : "Run Full Agent Analysis"}</span>
           </button>
         </div>
       </div>
@@ -68,7 +71,7 @@ export default function DashboardView({
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>Electricity Readings</span>
-            <span className="text-base">⚡</span>
+            <Zap className="w-4 h-4 text-amber-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -86,7 +89,7 @@ export default function DashboardView({
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>Water Readings</span>
-            <span className="text-base">💧</span>
+            <Droplets className="w-4 h-4 text-cyan-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -104,7 +107,7 @@ export default function DashboardView({
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>Appliances & Tasks</span>
-            <span className="text-base">🔧</span>
+            <Wrench className="w-4 h-4 text-amber-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -124,7 +127,7 @@ export default function DashboardView({
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>Supplies & Inventory</span>
-            <span className="text-base">📦</span>
+            <Package className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -291,10 +294,11 @@ export default function DashboardView({
                           {rec.recommendation?.status !== "completed" && (
                             <button
                               onClick={() => onUpdateRecommendationStatus(rec.id, "completed")}
-                              className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                              className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium flex items-center gap-1"
                               title="Mark completed"
                             >
-                              ✓ Complete
+                              <Check className="w-3 h-3" />
+                              <span>Complete</span>
                             </button>
                           )}
                           {rec.recommendation?.status !== "deferred" && rec.recommendation?.status !== "completed" && (
@@ -309,10 +313,10 @@ export default function DashboardView({
                           {rec.recommendation?.status !== "dismissed" && rec.recommendation?.status !== "completed" && (
                             <button
                               onClick={() => onUpdateRecommendationStatus(rec.id, "dismissed")}
-                              className="px-1.5 py-0.5 rounded text-slate-400 hover:text-red-500"
+                              className="p-1 rounded text-slate-400 hover:text-red-500"
                               title="Dismiss recommendation"
                             >
-                              ✕
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           )}
                           {rec.recommendation?.status && rec.recommendation?.status !== "active" && (
