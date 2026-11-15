@@ -3,9 +3,14 @@ from google.api_core.exceptions import GoogleAPIError
 
 from app.schemas_agents import AgentRunCreate
 from app.services.auth import get_current_household
-from app.services.agent_service import get_agent_run, run_agent
+from app.services.agent_service import get_agent_run, list_agent_runs, run_agent
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
+
+
+@router.get("/runs")
+def read_agent_runs(household=Depends(get_current_household)) -> list[dict]:
+    return list_agent_runs(household_id=household.id)
 
 
 @router.post("/runs")

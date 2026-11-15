@@ -38,6 +38,7 @@ def test_sensitive_endpoints_reject_unauthenticated_requests():
         assert client.get("/api/monitoring/issues").status_code == 401
         assert client.post("/api/monitoring/check", json={}).status_code == 401
         assert client.post("/api/agents/runs", json={"goal": "test"}).status_code == 401
+        assert client.get("/api/agents/runs").status_code == 401
         assert client.get("/api/intelligence/summary").status_code == 401
 
 

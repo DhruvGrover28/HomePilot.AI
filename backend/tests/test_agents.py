@@ -65,6 +65,44 @@ def test_agent_run_routes_domains_and_persists_result(mock_mode):
         assert persisted.status_code == 200
         assert persisted.json()["id"] == result["id"]
 
+        # Verify collection endpoint GET /api/agents/runs returns the run
+        runs_list = client.get("/api/agents/runs")
+        assert runs_list.status_code == 200
+        runs_data = runs_list.json()
+        assert isinstance(runs_data, list)
+        assert any(r["id"] == result["id"] for r in runs_data)
+
+
+def test_list_agent_runs_enforces_household_isolation(mock_mode):
+    initialize_database()
+    with _auth_client() as client_a, _auth_client() as client_b:
+        # Initially both have empty history
+        res_a = client_a.get("/api/agents/runs")
+        assert res_a.status_code == 200
+        assert res_a.json() == []
+
+        res_b = client_b.get("/api/agents/runs")
+        assert res_b.status_code == 200
+        assert res_b.json() == []
+
+        # Create run in Household A
+        create_res = client_a.post(
+            "/api/agents/runs",
+            json={"goal": "Household A run", "domains": ["energy"]},
+        )
+        assert create_res.status_code == 200
+        run_a_id = create_res.json()["id"]
+
+        # Household A sees the run
+        runs_a = client_a.get("/api/agents/runs").json()
+        assert len(runs_a) == 1
+        assert runs_a[0]["id"] == run_a_id
+
+        # Household B cannot see Household A's run in list or by ID
+        runs_b = client_b.get("/api/agents/runs").json()
+        assert runs_b == []
+        assert client_b.get(f"/api/agents/runs/{run_a_id}").status_code == 404
+
 
 def test_agent_run_rejects_unknown_domain_and_missing_run(mock_mode):
     initialize_database()

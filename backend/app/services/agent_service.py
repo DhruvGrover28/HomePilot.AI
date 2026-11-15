@@ -112,3 +112,19 @@ def get_agent_run(run_id: str, *, household_id: str | None = None) -> dict | Non
             )
         )
         return _serialize_run(run) if run else None
+
+
+def list_agent_runs(*, household_id: str | None = None, limit: int = 50) -> list[dict]:
+    with SessionLocal() as session:
+        condition = (
+            AgentRun.household_id == household_id
+            if household_id is not None
+            else AgentRun.household_id.is_(None)
+        )
+        runs = session.scalars(
+            select(AgentRun)
+            .where(condition)
+            .order_by(AgentRun.created_at.desc())
+            .limit(limit)
+        ).all()
+        return [_serialize_run(run) for run in runs]
