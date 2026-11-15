@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { apiJson } from "../api";
+import { BrandSymbol } from "./BrandLogo";
 
 export default function OnboardingWizard({ household, onComplete, onSeedDemo }) {
   const [step, setStep] = useState(1);
@@ -95,10 +96,8 @@ export default function OnboardingWizard({ household, onComplete, onSeedDemo }) 
       <div className="w-full max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-2xl space-y-6">
         {/* Progress indicator */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-2">
-            <span className="h-7 w-7 rounded-lg bg-teal-500/20 text-teal-300 flex items-center justify-center text-xs font-bold border border-teal-500/30">
-              HP
-            </span>
+          <div className="flex items-center gap-2.5">
+            <BrandSymbol size="sm" />
             <span className="text-xs uppercase tracking-widest text-slate-400 font-semibold">
               Household Setup · Step {step} of 4
             </span>

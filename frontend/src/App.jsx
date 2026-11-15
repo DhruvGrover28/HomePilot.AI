@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { apiJson, apiFetch } from "./api";
 import { X } from "lucide-react";
+import { BrandSymbol } from "./components/BrandLogo";
 import Navigation from "./components/Navigation";
 import PublicLanding from "./components/PublicLanding";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -204,9 +205,7 @@ export default function App() {
   if (globalLoading) {
     return (
       <main className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 p-6 space-y-4">
-        <div className="h-10 w-10 rounded-xl bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-teal-300 font-bold text-xl animate-pulse">
-          HP
-        </div>
+        <BrandSymbol size="xl" animate={true} />
         <p className="text-xs text-slate-400 font-mono tracking-wider uppercase">
           Initializing HomePilot AI Operations...
         </p>

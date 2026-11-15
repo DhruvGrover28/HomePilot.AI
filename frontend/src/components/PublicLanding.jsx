@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { apiJson } from "../api";
+import BrandLogo from "./BrandLogo";
 import {
   Zap,
   Droplets,
@@ -90,19 +91,7 @@ export default function PublicLanding({ onAuthenticated }) {
       {/* Top Navbar */}
       <nav className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 p-0.5 shadow-md shadow-teal-500/20">
-              <div className="h-full w-full bg-slate-950 rounded-[10px] flex items-center justify-center text-teal-300 font-bold text-sm tracking-wider">
-                HP
-              </div>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xl font-bold tracking-tight text-white leading-tight">
-                HomePilot <span className="text-teal-400 font-normal">AI</span>
-              </span>
-              <span className="text-[10px] font-medium text-slate-400 tracking-wide uppercase">Household Autopilot</span>
-            </div>
-          </div>
+          <BrandLogo subtitle="Household Autopilot" size="lg" />
 
           <div className="hidden md:flex items-center gap-8 text-sm text-slate-300 font-medium">
             <a href="#features" className="hover:text-teal-300 transition-colors">Features</a>

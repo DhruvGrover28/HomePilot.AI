@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import BrandLogo from "./BrandLogo";
 import {
   LayoutDashboard,
   Zap,
@@ -48,19 +49,7 @@ export default function Navigation({
       <div>
         {/* Brand header / Mobile Topbar */}
         <div className="p-4 md:p-5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-teal-300 font-bold text-lg">
-              HP
-            </div>
-            <div>
-              <h1 className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
-                HomePilot <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-teal-400 text-slate-950">AI</span>
-              </h1>
-              <p className="text-xs text-slate-400 truncate max-w-[140px]">
-                {household?.name || "My Household"}
-              </p>
-            </div>
-          </div>
+          <BrandLogo subtitle={household?.name || "My Household"} size="md" />
 
           {/* Mobile Hamburger Toggle Button */}
           <button

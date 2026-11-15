@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" fill="none" role="img" aria-label="HomePilot AI Favicon">
+  <defs>
+    <linearGradient id="favBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F19" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="favTeal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22D3EE" />
+      <stop offset="100%" stop-color="#14B8A6" />
+    </linearGradient>
+    <linearGradient id="favPilot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#34D399" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background squircle for solid contrast on dark and light browser chrome -->
+  <rect width="64" height="64" rx="14" fill="url(#favBg)" />
+
+  <!-- Bold Geometric House Silhouette -->
+  <path d="M 32 10 L 53 25 L 53 50 A 4 4 0 0 1 49 54 L 15 54 A 4 4 0 0 1 11 50 L 11 25 Z"
+        stroke="url(#favTeal)"
+        stroke-width="3.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="#0D1527"
+        fill-opacity="0.8" />
+
+  <!-- 4 Coordinated Agent Nodes (Energy, Water, Maintenance, Inventory) -->
+  <circle cx="21" cy="31" r="3.2" fill="#38BDF8" />
+  <circle cx="43" cy="31" r="3.2" fill="#22D3EE" />
+  <circle cx="21" cy="45" r="3.2" fill="#34D399" />
+  <circle cx="43" cy="45" r="3.2" fill="#2DD4BF" />
+
+  <!-- Central Pilot Navigation Diamond -->
+  <path d="M 32 29 L 36 38 L 41 38 L 36.5 40.5 L 32 47 L 27.5 40.5 L 23 38 L 28 38 Z"
+        fill="url(#favPilot)" />
+  <circle cx="32" cy="38" r="1.6" fill="#FFFFFF" />
+</svg>
