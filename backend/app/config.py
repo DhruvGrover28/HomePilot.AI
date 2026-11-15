@@ -35,8 +35,20 @@ class Settings(BaseSettings):
     monitoring_max_pending_jobs: int = 4
     monitoring_claim_timeout_minutes: int = 30
     session_cookie_secure: bool = False
+    session_cookie_samesite: str = "lax"
 
     model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", extra="ignore")
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.session_cookie_secure
+
+    @property
+    def cookie_samesite(self) -> str:
+        val = (self.session_cookie_samesite or "lax").strip().lower()
+        if val not in {"lax", "strict", "none"}:
+            return "lax"
+        return val
 
     @property
     def cors_origin_list(self) -> list[str]:

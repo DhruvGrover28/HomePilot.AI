@@ -29,6 +29,10 @@ services:
         sync: false
       - key: MONITORING_SCHEDULER_ENABLED
         value: "true"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SESSION_COOKIE_SAMESITE
+        value: "none"
 
   # HomePilot React / Vite Frontend Static Site
   - type: web

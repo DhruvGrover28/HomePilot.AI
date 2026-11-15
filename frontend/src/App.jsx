@@ -52,15 +52,24 @@ export default function App() {
       const userRes = await apiFetch("/api/auth/me");
       if (userRes.ok) {
         const user = await userRes.json();
-        setAuthUser(user);
-
         // Fetch household details
+        let hhData = null;
         try {
-          const hhData = await apiJson("/api/auth/household");
-          setHousehold(hhData);
-        } catch {
-          // ignore household fetch error if none exists
+          hhData = await apiJson("/api/auth/household");
+        } catch (err) {
+          if (err.status === 401) {
+            setAuthUser(null);
+            setHousehold(null);
+            return;
+          }
+          if (err.status === 404 || err.status === 409) {
+            hhData = null;
+          } else {
+            setBannerError(err.message || "Failed to load household configuration.");
+          }
         }
+        setAuthUser(user);
+        setHousehold(hhData);
         await loadHouseholdData();
       } else {
         setAuthUser(null);
@@ -83,10 +92,24 @@ export default function App() {
         apiJson("/api/intelligence/summary"),
       ]);
 
+      const authErr = [sumData, monData, intData].find(
+        (r) => r.status === "rejected" && r.reason?.status === 401
+      );
+      if (authErr) {
+        setAuthUser(null);
+        setHousehold(null);
+        return;
+      }
+
       if (sumData.status === "fulfilled") setSummary(sumData.value);
       if (monData.status === "fulfilled") setMonitoringIssues(monData.value);
       if (intData.status === "fulfilled") setIntelligence(intData.value);
     } catch (err) {
+      if (err.status === 401) {
+        setAuthUser(null);
+        setHousehold(null);
+        return;
+      }
       setBannerError(err.message || "Failed to load household operations data.");
     }
   }
@@ -194,14 +217,33 @@ export default function App() {
   if (!authChecked || !authUser) {
     return (
       <PublicLanding
-        onAuthenticated={async (user) => {
-          setAuthUser(user);
-          try {
-            const hh = await apiJson("/api/auth/household");
-            setHousehold(hh);
-          } catch {
-            // ignore
+        onAuthenticated={async () => {
+          const userRes = await apiFetch("/api/auth/me");
+          if (!userRes.ok) {
+            setAuthUser(null);
+            setHousehold(null);
+            throw new Error("Session verification failed. Please check browser cookie settings.");
           }
+          const verifiedUser = await userRes.json();
+          let hh = null;
+          try {
+            hh = await apiJson("/api/auth/household");
+          } catch (err) {
+            if (err.status === 401) {
+              setAuthUser(null);
+              setHousehold(null);
+              throw new Error("Session authentication failed while retrieving household.");
+            }
+            if (err.status === 404 || err.status === 409) {
+              hh = null;
+            } else {
+              setAuthUser(null);
+              setHousehold(null);
+              throw err;
+            }
+          }
+          setHousehold(hh);
+          setAuthUser(verifiedUser);
           await loadHouseholdData();
         }}
       />
@@ -214,9 +256,18 @@ export default function App() {
       <OnboardingWizard
         household={household}
         onComplete={async () => {
-          const hh = await apiJson("/api/auth/household");
-          setHousehold(hh);
-          await loadHouseholdData();
+          try {
+            const hh = await apiJson("/api/auth/household");
+            setHousehold(hh);
+            await loadHouseholdData();
+          } catch (err) {
+            if (err.status === 401) {
+              setAuthUser(null);
+              setHousehold(null);
+              return;
+            }
+            setBannerError(err.message || "Failed to update household settings.");
+          }
         }}
         onSeedDemo={handleSeedDemoData}
       />

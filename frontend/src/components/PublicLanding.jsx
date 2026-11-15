@@ -48,7 +48,7 @@ export default function PublicLanding({ onAuthenticated }) {
         body: JSON.stringify(payload),
       });
 
-      onAuthenticated(result.user);
+      await onAuthenticated(result.user);
     } catch (err) {
       setError(err.message || "Authentication failed. Please verify credentials.");
     } finally {

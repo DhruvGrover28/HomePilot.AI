@@ -128,12 +128,13 @@ def update_household_settings(household_id: str, payload) -> HouseholdOut:
 
 
 def _set_session_cookie(response: Response, raw_token: str) -> None:
+    settings = get_settings()
     response.set_cookie(
         SESSION_COOKIE,
         raw_token,
         httponly=True,
-        secure=get_settings().session_cookie_secure,
-        samesite="lax",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=int(SESSION_TTL.total_seconds()),
         path="/",
     )
@@ -204,6 +205,7 @@ def _create_session(session, user_id: str, response: Response) -> None:
 
 
 def revoke_session(request: Request, response: Response) -> None:
+    settings = get_settings()
     raw_token = request.cookies.get(SESSION_COOKIE)
     if raw_token:
         token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
@@ -212,7 +214,13 @@ def revoke_session(request: Request, response: Response) -> None:
             if row is not None:
                 row.revoked_at = clock.now()
                 session.commit()
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        httponly=True,
+    )
 
 
 def delete_user_account(user_id: str, request: Request, response: Response) -> None:

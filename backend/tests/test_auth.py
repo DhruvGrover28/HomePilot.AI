@@ -630,3 +630,124 @@ def test_registration_normalizes_full_name_and_email():
         }
         res_blank = client.post("/api/auth/register", json=blank_name_payload)
         assert res_blank.status_code == 422
+
+
+def test_local_cookie_attributes_default_to_lax_and_insecure(monkeypatch):
+    """Verify local development cookies retain SameSite=Lax, Secure=False, and matching deletion attributes."""
+    from app.config import get_settings
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("SESSION_COOKIE_SAMESITE", raising=False)
+    get_settings.cache_clear()
+
+    initialize_database()
+    email = f"local_cookie_{uuid4()}@example.com"
+    payload = {
+        "full_name": "Local Cookie User",
+        "email": email,
+        "password": "valid_secure_pass123",
+        "confirm_password": "valid_secure_pass123",
+    }
+    with TestClient(app) as client:
+        res = client.post("/api/auth/register", json=payload)
+        assert res.status_code == 201
+        cookie_header = res.headers.get("set-cookie", "").lower()
+        assert "samesite=lax" in cookie_header
+        assert "secure" not in cookie_header
+        assert "httponly" in cookie_header
+        assert "path=/" in cookie_header
+
+        # Test cookie deletion in local environment
+        logout_res = client.post("/api/auth/logout")
+        assert logout_res.status_code == 204
+        logout_cookie = logout_res.headers.get("set-cookie", "").lower()
+        assert "samesite=lax" in logout_cookie
+        assert "secure" not in logout_cookie
+        assert "max-age=0" in logout_cookie
+
+    get_settings.cache_clear()
+
+
+def test_production_cookie_attributes_use_none_and_secure(monkeypatch):
+    """Verify production cookies use SameSite=None, Secure=True, and matching deletion attributes."""
+    from app.config import get_settings
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("SESSION_COOKIE_SAMESITE", "none")
+    get_settings.cache_clear()
+
+    try:
+        initialize_database()
+        email = f"prod_cookie_{uuid4()}@example.com"
+        payload = {
+            "full_name": "Prod Cookie User",
+            "email": email,
+            "password": "valid_secure_pass123",
+            "confirm_password": "valid_secure_pass123",
+        }
+        with TestClient(app, base_url="https://testserver") as client:
+            res = client.post("/api/auth/register", json=payload)
+            assert res.status_code == 201
+            cookie_header = res.headers.get("set-cookie", "").lower()
+            assert "samesite=none" in cookie_header
+            assert "secure" in cookie_header
+            assert "httponly" in cookie_header
+            assert "path=/" in cookie_header
+            assert "domain=" not in cookie_header  # Public suffix host-only cookie
+
+            # Verify authenticated request with this cookie works over HTTPS
+            me_res = client.get("/api/auth/me")
+            assert me_res.status_code == 200
+            assert me_res.json()["email"] == email
+
+            # Test cookie deletion in production environment
+            logout_res = client.post("/api/auth/logout")
+            assert logout_res.status_code == 204
+            logout_cookie = logout_res.headers.get("set-cookie", "").lower()
+            assert "samesite=none" in logout_cookie
+            assert "secure" in logout_cookie
+            assert "max-age=0" in logout_cookie
+    finally:
+        get_settings.cache_clear()
+
+
+def test_session_cookie_validation_and_rejection():
+    """Verify session cookie validation, invalid token rejection, and working authenticated sessions."""
+    from app.config import get_settings
+    get_settings.cache_clear()
+    initialize_database()
+    with TestClient(app) as client:
+        # 1. Missing cookie -> 401
+        res = client.get("/api/auth/me")
+        assert res.status_code == 401
+        assert "Authentication is required" in res.json().get("detail", "")
+
+        # 2. Invalid cookie token -> 401
+        client.cookies.set("homepilot_session", "completely-bogus-token-value")
+        res_invalid = client.get("/api/auth/me")
+        assert res_invalid.status_code == 401
+
+        # 3. Valid registration cookie succeeds
+        email = f"valid_{uuid4()}@example.com"
+        reg = client.post(
+            "/api/auth/register",
+            json={
+                "full_name": "Valid Session User",
+                "email": email,
+                "password": "valid_secure_pass123",
+                "confirm_password": "valid_secure_pass123",
+            },
+        )
+        assert reg.status_code == 201
+        me_valid = client.get("/api/auth/me")
+        assert me_valid.status_code == 200
+        assert me_valid.json()["email"] == email
+
+        # 4. Valid login establishes working session
+        with TestClient(app) as login_client:
+            assert login_client.get("/api/auth/me").status_code == 401
+            log_res = login_client.post(
+                "/api/auth/login",
+                json={"email": email, "password": "valid_secure_pass123"},
+            )
+            assert log_res.status_code == 200
+            assert login_client.get("/api/auth/me").status_code == 200
+            assert login_client.get("/api/auth/household").status_code == 200
