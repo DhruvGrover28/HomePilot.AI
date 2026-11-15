@@ -8,7 +8,9 @@ from app.config import get_settings
 from app.db import initialize_database
 from app.routers.household import router as household_router
 from app.routers.agents import router as agents_router
+from app.routers.monitoring import router as monitoring_router
 from app.seed import seed_demo
+from app.services.monitoring_runtime import monitoring_runtime
 
 settings = get_settings()
 app = FastAPI(title="HomePilot AI", version="1.0.0")
@@ -25,8 +27,14 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     initialize_database()
+    monitoring_runtime.start()
     if settings.demo_autoseed:
         seed_demo()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    monitoring_runtime.stop()
 
 
 @app.get("/health")
@@ -36,6 +44,7 @@ def health() -> dict[str, str]:
 
 app.include_router(household_router)
 app.include_router(agents_router)
+app.include_router(monitoring_router)
 
 
 @app.post("/api/demo/seed")

@@ -29,6 +29,7 @@ function ConsumptionChart({ title, rows, color }) {
 export default function App() {
   const [summary, setSummary] = useState(null);
   const [agentRun, setAgentRun] = useState(null);
+  const [monitoringIssues, setMonitoringIssues] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -44,13 +45,36 @@ export default function App() {
     }
   }
 
+  async function loadMonitoring() {
+    const response = await fetch(`${API_BASE_URL}/api/monitoring/issues`);
+    if (!response.ok) throw new Error("Unable to load monitoring activity.");
+    setMonitoringIssues(await response.json());
+  }
+
   async function seedDemo() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/demo/seed`, { method: "POST" });
       if (!response.ok) throw new Error("Unable to seed demo data.");
       await loadSummary();
+      await loadMonitoring();
     } catch (seedError) {
       setError(seedError.message);
+    }
+
+  }
+
+  async function runMonitoring() {
+    try {
+      setError("");
+      const response = await fetch(`${API_BASE_URL}/api/monitoring/check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) throw new Error("Unable to run monitoring.");
+      setMonitoringIssues(await response.json());
+    } catch (monitoringError) {
+      setError(monitoringError.message);
     }
   }
 
@@ -69,7 +93,9 @@ export default function App() {
     }
   }
 
-  useEffect(() => { loadSummary(); }, []);
+  useEffect(() => {
+    Promise.all([loadSummary(), loadMonitoring()]).catch((loadError) => setError(loadError.message));
+  }, []);
 
   if (loading) return <main className="p-8">Loading HomePilot...</main>;
   return (
@@ -81,6 +107,7 @@ export default function App() {
           <p className="mt-2 text-slate-600">Monitor consumption, maintenance and supplies from one place.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={runMonitoring} className="rounded-lg border border-teal-700 px-4 py-2 text-sm font-medium text-teal-800">Check monitoring</button>
           <button onClick={runAnalysis} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white">Run household analysis</button>
           <button onClick={seedDemo} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Seed simulated demo</button>
         </div>
@@ -98,6 +125,51 @@ export default function App() {
             <ConsumptionChart title="Electricity daily rate (kWh)" rows={summary.electricity} color="#0f766e" />
             <ConsumptionChart title="Water daily rate (litres)" rows={summary.water} color="#1d4ed8" />
           </div>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-lg font-semibold">Monitoring activity</h2>
+              <span className="text-xs text-slate-500">{monitoringIssues.length} detected records</span>
+            </div>
+            {monitoringIssues.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">No monitoring issues detected.</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {monitoringIssues.map((issue) => (
+                  <article key={issue.id} className="rounded-lg border border-slate-100 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-semibold">{issue.title}</h3>
+                      <div className="flex gap-2 text-xs uppercase tracking-wide">
+                        <span className={issue.issue_status === "open" ? "text-amber-700" : "text-green-700"}>{issue.issue_status}</span>
+                        <span className="text-slate-500">{issue.investigation_status}</span>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {issue.domain}{issue.entity_id ? ` #${issue.entity_id}` : ""} · First: {issue.first_trigger_source} · Latest: {issue.last_trigger_source} · Occurrences: {issue.occurrence_count}
+                    </p>
+                    {issue.latest_evidence_id && (
+                      <p className="mt-1 text-xs text-slate-500">Latest evidence reading: {issue.latest_evidence_id}</p>
+                    )}
+                    {issue.latest_run?.findings?.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {issue.latest_run.findings.map((finding) => (
+                          <p key={finding.id} className="text-sm text-slate-600">{finding.summary}</p>
+                        ))}
+                      </div>
+                    )}
+                    {issue.latest_run?.recommendations?.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {issue.latest_run.recommendations.map((recommendation) => (
+                          <p key={`${recommendation.category}-${recommendation.subject}`} className="text-sm text-teal-800">
+                            Recommendation: {recommendation.suggested_action}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold">Household records</h2>
             <div className="mt-4 grid gap-3 md:grid-cols-2">

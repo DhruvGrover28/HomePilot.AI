@@ -10,6 +10,7 @@ from app.db.models import Appliance, InventoryItem, InventoryLog, Reading, Shopp
 from app.db.session import SessionLocal
 from app.domain import consumption_stats
 from app.schemas import ApplianceCreate, InventoryCreate, InventoryUpdate, ReadingCreate, ShoppingCreate, TaskCreate
+from app.services.monitoring_runtime import monitoring_runtime
 
 router = APIRouter(prefix="/api", tags=["household"])
 
@@ -37,6 +38,7 @@ def create_reading(payload: ReadingCreate) -> dict:
         session.add(row)
         session.commit()
         session.refresh(row)
+        monitoring_runtime.trigger_event(["energy" if payload.type == "electricity" else "water"])
         return _read(row)
 
 
@@ -57,6 +59,7 @@ def update_reading(reading_id: int, payload: ReadingCreate) -> dict:
         for field, value in payload.model_dump().items():
             setattr(row, field, value)
         session.commit(); session.refresh(row)
+        monitoring_runtime.trigger_event(["energy" if payload.type == "electricity" else "water"])
         return _read(row)
 
 
@@ -66,8 +69,10 @@ def delete_reading(reading_id: int) -> None:
         row = session.get(Reading, reading_id)
         if row is None:
             raise HTTPException(404, "Reading not found.")
+        domain = "energy" if row.type == "electricity" else "water"
         session.delete(row)
         session.commit()
+    monitoring_runtime.trigger_event([domain])
 
 
 @router.post("/readings/import")
@@ -98,6 +103,7 @@ async def import_readings(file: UploadFile = File(...)) -> dict:
     with SessionLocal() as session:
         session.add_all([Reading(**item.model_dump(), created_at=clock.now()) for item in valid])
         session.commit()
+    monitoring_runtime.trigger_event(sorted({"energy" if item.type == "electricity" else "water" for item in valid}))
     return {"imported": len(valid)}
 
 
@@ -112,6 +118,7 @@ def create_appliance(payload: ApplianceCreate) -> dict:
     with SessionLocal() as session:
         row = Appliance(**payload.model_dump(), created_at=clock.now())
         session.add(row); session.commit(); session.refresh(row)
+        monitoring_runtime.trigger_event(["maintenance"])
         return _read(row)
 
 
@@ -128,6 +135,7 @@ def create_inventory(payload: InventoryCreate) -> dict:
         session.add(row); session.flush()
         session.add(InventoryLog(item_id=row.id, quantity=row.quantity, logged_at=clock.now(), source="manual", is_simulated=row.is_simulated, created_at=clock.now()))
         session.commit(); session.refresh(row)
+        monitoring_runtime.trigger_event(["inventory"])
         return _read(row)
 
 
@@ -140,6 +148,7 @@ def update_appliance(appliance_id: int, payload: ApplianceCreate) -> dict:
         for field, value in payload.model_dump().items():
             setattr(row, field, value)
         session.commit(); session.refresh(row)
+        monitoring_runtime.trigger_event(["maintenance"])
         return _read(row)
 
 
@@ -151,6 +160,7 @@ def delete_appliance(appliance_id: int) -> None:
             raise HTTPException(404, "Appliance not found.")
         session.delete(row)
         session.commit()
+    monitoring_runtime.trigger_event(["maintenance"])
 
 
 @router.patch("/inventory/{item_id}")
@@ -162,6 +172,7 @@ def update_inventory(item_id: int, payload: InventoryUpdate) -> dict:
         row.quantity = payload.quantity
         session.add(InventoryLog(item_id=row.id, quantity=row.quantity, logged_at=clock.now(), source=payload.source, is_simulated=row.is_simulated, created_at=clock.now()))
         session.commit(); session.refresh(row)
+        monitoring_runtime.trigger_event(["inventory"])
         return _read(row)
 
 
@@ -173,6 +184,7 @@ def delete_inventory(item_id: int) -> None:
             raise HTTPException(404, "Inventory item not found.")
         session.delete(row)
         session.commit()
+    monitoring_runtime.trigger_event(["inventory"])
 
 
 @router.get("/shopping-list")
@@ -223,6 +235,7 @@ def create_task(payload: TaskCreate) -> dict:
     with SessionLocal() as session:
         row = Task(**payload.model_dump(), created_at=clock.now())
         session.add(row); session.commit(); session.refresh(row)
+        monitoring_runtime.trigger_event(["maintenance"])
         return _read(row)
 
 
@@ -235,6 +248,7 @@ def update_task(task_id: int, payload: TaskCreate) -> dict:
         for field, value in payload.model_dump().items():
             setattr(row, field, value)
         session.commit(); session.refresh(row)
+        monitoring_runtime.trigger_event(["maintenance"])
         return _read(row)
 
 
@@ -246,6 +260,7 @@ def delete_task(task_id: int) -> None:
             raise HTTPException(404, "Task not found.")
         session.delete(row)
         session.commit()
+    monitoring_runtime.trigger_event(["maintenance"])
 
 
 @router.get("/dashboard/summary")

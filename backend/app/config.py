@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     stale_reading_days: int = 35
     warranty_warn_days: int = 30
     stockout_warn_days: int = 7
+    monitoring_enabled: bool = True
+    monitoring_interval_minutes: int = 15
+    monitoring_max_workers: int = 2
+    monitoring_max_pending_jobs: int = 4
+    monitoring_claim_timeout_minutes: int = 30
 
     model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", extra="ignore")
 

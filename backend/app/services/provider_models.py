@@ -96,13 +96,20 @@ def _http_failure(provider: str, model: str, response: httpx.Response) -> Provid
     return ProviderCallError(provider, model, category, http_status=response.status_code)
 
 
-def _invoke_provider(provider: ProviderDecisionModel, state: dict[str, Any]) -> ProviderOutcome:
+def _invoke_provider(
+    provider: ProviderDecisionModel,
+    state: dict[str, Any],
+    entry: dict[str, Any] | None = None,
+) -> ProviderOutcome:
     try:
-        return ProviderOutcome(decision=provider.decide(state))
+        outcome = ProviderOutcome(decision=provider.decide(state))
     except ProviderCallError as exc:
-        return ProviderOutcome(error=exc)
+        outcome = ProviderOutcome(error=exc)
     except Exception as exc:
-        return ProviderOutcome(error=exc)
+        outcome = ProviderOutcome(error=exc)
+    if entry is not None and outcome.decision is not None:
+        entry["success"] = True
+    return outcome
 
 
 class GeminiDecisionModel:
@@ -303,7 +310,15 @@ class StaggeredDecisionModel:
         executor = ThreadPoolExecutor(max_workers=len(self._providers), thread_name_prefix="homepilot-provider")
         tasks = {
             asyncio.create_task(
-                self._run_after_delay(index, name, state, entries[index], race_started, executor)
+                self._run_after_delay(
+                    index,
+                    name,
+                    state,
+                    entry=entries[index],
+                    entries=entries,
+                    race_started=race_started,
+                    executor=executor,
+                )
             ): index
             for index, name in enumerate(self._providers)
         }
@@ -365,11 +380,18 @@ class StaggeredDecisionModel:
         provider_name: str,
         state: dict[str, Any],
         entry: dict[str, Any],
+        entries: list[dict[str, Any]],
         race_started: float,
         executor: ThreadPoolExecutor,
     ) -> ProviderOutcome:
         try:
             await self._sleep(index * self._stagger_seconds)
+            if index:
+                await asyncio.sleep(self._stagger_seconds)
+            if any(previous["success"] for previous in entries[:index]):
+                entry["cancelled"] = True
+                entry["outcome"] = "cancelled"
+                return ProviderOutcome(cancelled=True)
             provider = _provider_model(provider_name)
             entry["model"] = provider.model
             entry["started_at_ms"] = round((self._clock() - race_started) * 1000, 2)
@@ -378,7 +400,13 @@ class StaggeredDecisionModel:
             remaining_seconds = race_started + self._deadline_seconds - self._clock()
             if isinstance(provider, (GeminiDecisionModel, HttpDecisionModel)):
                 provider.set_timeout(remaining_seconds)
-            future = asyncio.get_running_loop().run_in_executor(executor, _invoke_provider, provider, state)
+            future = asyncio.get_running_loop().run_in_executor(
+                executor,
+                _invoke_provider,
+                provider,
+                state,
+                entry,
+            )
             outcome = await future
             if outcome.error is not None:
                 if isinstance(outcome.error, ProviderCallError):

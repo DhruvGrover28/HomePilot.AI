@@ -1,5 +1,11 @@
 # HomePilot AI Changelog
 
+## Phase 3 - 2026-11-15
+- Added shared deterministic scheduled, event-driven and manual household monitoring.
+- Added persistent stable issue fingerprints, independent issue/investigation lifecycles and positive-only resolution.
+- Added bounded background investigations, APScheduler lifecycle management, monitoring APIs and dashboard visibility.
+- Added monitoring tests, API coverage and empty-database verification.
+
 ## Provider integration - 2026-11-14
 - Added explicit Groq and OpenRouter provider selection for the existing LangGraph Supervisor while preserving Gemini and mock modes.
 - Added staggered OpenRouter → Groq → Gemini application-level provider racing with sanitized attempt traces and controlled exhaustion.

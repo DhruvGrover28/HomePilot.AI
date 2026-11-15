@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.db import initialize_database
 from app.main import app
+from app.services.monitoring_runtime import monitoring_runtime
 
 
 def test_health():
@@ -53,3 +54,27 @@ def test_resource_crud_and_missing_resource_errors():
             "/api/tasks", json={"title": "Test task", "description": "", "due_date": "2026-12-01"}
         ).json()
         assert client.delete(f"/api/tasks/{task['id']}").status_code == 204
+
+
+def test_monitoring_api_uses_manual_shared_check_path():
+    initialize_database()
+    with TestClient(app) as client:
+        response = client.post("/api/monitoring/check", json={"domains": ["inventory"]})
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+        assert client.get("/api/monitoring/issues").status_code == 200
+        assert client.post("/api/monitoring/check", json={"domains": ["unknown"]}).status_code == 422
+
+
+def test_executor_rejection_does_not_fail_successful_inventory_mutation(monkeypatch):
+    initialize_database()
+    from app.services.monitoring_executor import MonitoringExecutor
+
+    rejected_executor = MonitoringExecutor()
+    monkeypatch.setattr(monitoring_runtime, "_executor", rejected_executor)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/inventory",
+            json={"name": "Rejected monitoring", "quantity": 1, "unit": "unit", "reorder_threshold": 2},
+        )
+    assert response.status_code == 200
