@@ -9,6 +9,7 @@ export default function DashboardView({
   onRunMonitoring,
   onRunAnalysis,
   workingAction,
+  onUpdateRecommendationStatus,
 }) {
   const electricityData = (summary?.electricity || []).map((row) => ({
     date: row.reading_date,
