@@ -9,9 +9,24 @@ from app import clock
 from app.db.models import Appliance, InventoryItem, InventoryLog, Reading, ShoppingListItem, Task
 from app.db.session import SessionLocal
 from app.domain import consumption_stats
-from app.schemas import ApplianceCreate, InventoryCreate, InventoryUpdate, ReadingCreate, ShoppingCreate, TaskCreate
+from app.schemas import (
+    ApplianceCreate,
+    InventoryCreate,
+    InventoryReconciliationRequest,
+    InventoryReconciliationResponse,
+    InventoryScanResponse,
+    InventoryUpdate,
+    ReadingCreate,
+    ShoppingCreate,
+    TaskCreate,
+)
 from app.services.monitoring_runtime import monitoring_runtime
 from app.services.auth import get_current_household
+from app.services.vision_service import (
+    reconcile_inventory_items,
+    scan_inventory_image,
+    validate_image_bytes,
+)
 
 router = APIRouter(prefix="/api", tags=["household"])
 
@@ -265,6 +280,37 @@ def delete_inventory(item_id: int, household=Depends(get_current_household)) -> 
         session.delete(row)
         session.commit()
     monitoring_runtime.trigger_event(["inventory"], household.id if household else None)
+
+
+@router.post("/inventory/scan", response_model=InventoryScanResponse)
+async def scan_inventory(
+    file: UploadFile = File(...),
+    household=Depends(get_current_household),
+) -> InventoryScanResponse:
+    if not file.filename:
+        raise HTTPException(400, "Filename is required.")
+    content = await file.read()
+    try:
+        mime_type = validate_image_bytes(content, file.filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    try:
+        return scan_inventory_image(content, mime_type, household_id=household.id)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/inventory/reconcile", response_model=InventoryReconciliationResponse)
+def reconcile_inventory(
+    payload: InventoryReconciliationRequest,
+    household=Depends(get_current_household),
+) -> InventoryReconciliationResponse:
+    try:
+        return reconcile_inventory_items(payload.items, household_id=household.id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/shopping-list")

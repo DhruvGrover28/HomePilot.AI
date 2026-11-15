@@ -12,6 +12,7 @@ from app.routers.assistant import router as assistant_router
 from app.routers.monitoring import router as monitoring_router
 from app.routers.intelligence import router as intelligence_router
 from app.routers.auth import router as auth_router
+from app.routers.bills import router as bills_router
 from app.seed import seed_demo
 from app.services.auth import get_optional_household
 from app.services.monitoring_runtime import monitoring_runtime
@@ -53,6 +54,7 @@ app.include_router(assistant_router)
 app.include_router(monitoring_router)
 app.include_router(intelligence_router)
 app.include_router(auth_router)
+app.include_router(bills_router)
 
 
 @app.post("/api/demo/seed")

@@ -4,9 +4,31 @@ from sqlalchemy import select
 
 from app import clock
 from app.config import get_settings
-from app.db.models import Appliance, InventoryItem, Reading
+from app.db.models import Appliance, InventoryItem, Reading, UtilityBill
 from app.db.session import SessionLocal
 from app.domain import consumption_stats, detect_anomaly, maintenance_status, warranty_status
+
+
+def utility_bills_summary(utility_type: str, household_id: str | None = None) -> dict:
+    if not household_id:
+        return {"utility_type": utility_type, "count": 0, "bills": []}
+    with SessionLocal() as session:
+        bills = session.scalars(
+            select(UtilityBill).where(
+                UtilityBill.utility_type == utility_type,
+                UtilityBill.household_id == household_id,
+            ).order_by(UtilityBill.period_end.desc()).limit(5)
+        ).all()
+        return {
+            "utility_type": utility_type,
+            "count": len(bills),
+            "total_spend": sum(b.total_amount for b in bills if b.total_amount is not None),
+            "latest_bill": {
+                "period": f"{bills[0].period_start} to {bills[0].period_end}",
+                "consumption": bills[0].consumption,
+                "amount": bills[0].total_amount,
+            } if bills else None,
+        }
 
 
 def energy_readings(household_id: str | None = None) -> dict:
@@ -24,6 +46,7 @@ def energy_readings(household_id: str | None = None) -> dict:
         rows = session.scalars(query.order_by(Reading.reading_date)).all()
     rates = [row.consumption / row.period_days for row in rows]
     anomaly = detect_anomaly(rates, rates[-1]) if rates else {"insufficient_data": True}
+    bill_summary = utility_bills_summary("electricity", household_id)
     return {
         "type": "energy_readings",
         "count": len(rows),
@@ -31,6 +54,7 @@ def energy_readings(household_id: str | None = None) -> dict:
         "rates": rates,
         "statistics": consumption_stats(rates),
         "anomaly": anomaly,
+        "bills_summary": bill_summary,
     }
 
 
@@ -49,6 +73,7 @@ def water_readings(household_id: str | None = None) -> dict:
         rows = session.scalars(query.order_by(Reading.reading_date)).all()
     rates = [row.consumption / row.period_days for row in rows]
     anomaly = detect_anomaly(rates, rates[-1]) if rates else {"insufficient_data": True}
+    bill_summary = utility_bills_summary("water", household_id)
     return {
         "type": "water_readings",
         "count": len(rows),
@@ -56,6 +81,7 @@ def water_readings(household_id: str | None = None) -> dict:
         "rates": rates,
         "statistics": consumption_stats(rates),
         "anomaly": anomaly,
+        "bills_summary": bill_summary,
     }
 
 

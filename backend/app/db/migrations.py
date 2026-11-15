@@ -14,6 +14,7 @@ _OWNERSHIP_TABLES = (
     "tasks",
     "agent_runs",
     "monitoring_issues",
+    "utility_bills",
 )
 
 _CUSTOM_COLUMNS: dict[str, list[tuple[str, str]]] = {

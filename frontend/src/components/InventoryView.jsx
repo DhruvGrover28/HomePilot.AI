@@ -10,6 +10,16 @@ export default function InventoryView({ onDataChanged }) {
   const [showShoppingModal, setShowShoppingModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Vision Scan state
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [scanFile, setScanFile] = useState(null);
+  const [scanPreview, setScanPreview] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
+  const [reconcileItems, setReconcileItems] = useState([]);
+  const [reconciling, setReconciling] = useState(false);
+  const [scanSuccessMsg, setScanSuccessMsg] = useState("");
+
   // Forms
   const [itemForm, setItemForm] = useState({
     name: "",
@@ -28,6 +38,103 @@ export default function InventoryView({ onDataChanged }) {
     unit: "pack",
     estimated_cost: "",
   });
+
+  function handleScanFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Image file size exceeds 10 MB limit.");
+      return;
+    }
+    setScanFile(file);
+    setScanPreview(URL.createObjectURL(file));
+    setError("");
+  }
+
+  async function handleScanSubmit() {
+    if (!scanFile) return;
+    setScanning(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", scanFile);
+      const res = await apiFetch("/api/inventory/scan", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Failed to scan inventory image.");
+      }
+      const data = await res.json();
+      setScanResult(data);
+      const initialReconcile = (data.detected_items || []).map((det) => ({
+        name: det.name,
+        category: det.category || "general",
+        quantity: det.estimated_quantity,
+        unit: det.unit || "pcs",
+        confidence: det.confidence,
+        brand: det.brand,
+        notes: det.notes,
+        matched_item_id: det.matched_item_id,
+        existing_quantity: det.existing_quantity,
+        action: det.matched_item_id ? "add" : "new",
+        reorder_threshold: 1.0,
+      }));
+      setReconcileItems(initialReconcile);
+    } catch (err) {
+      setError(err.message || "Failed to analyze inventory image.");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function updateReconcileField(idx, field, value) {
+    setReconcileItems((prev) => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return updated;
+    });
+  }
+
+  function removeReconcileItem(idx) {
+    setReconcileItems((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  async function handleReconcileSubmit() {
+    setReconciling(true);
+    setError("");
+    try {
+      const payload = {
+        items: reconcileItems.map((item) => ({
+          action: item.action,
+          item_id: item.matched_item_id,
+          name: item.name,
+          quantity: Number(item.quantity) || 0,
+          unit: item.unit,
+          category: item.category,
+          reorder_threshold: Number(item.reorder_threshold) || 1,
+        })),
+      };
+      const resData = await apiJson("/api/inventory/reconcile", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setShowScanModal(false);
+      setScanResult(null);
+      setScanFile(null);
+      setScanPreview(null);
+      setScanSuccessMsg(
+        `Inventory reconciled successfully! ${resData.updated_items.length} updated, ${resData.created_items.length} created, ${resData.ignored_count} skipped.`
+      );
+      await loadData();
+      if (onDataChanged) onDataChanged();
+    } catch (err) {
+      setError(err.message || "Failed to reconcile inventory items.");
+    } finally {
+      setReconciling(false);
+    }
+  }
 
   async function loadData() {
     setLoading(true);
@@ -183,7 +290,13 @@ export default function InventoryView({ onDataChanged }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => { setError(""); setShowScanModal(true); setScanResult(null); setScanFile(null); setScanPreview(null); }}
+            className="px-3.5 py-2 text-xs font-bold rounded-lg bg-teal-600 hover:bg-teal-500 text-white shadow-sm transition flex items-center gap-1.5"
+          >
+            <span>📷</span> Scan Inventory
+          </button>
           <button
             onClick={() => { setError(""); setShowShoppingModal(true); }}
             className="px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition"
@@ -198,6 +311,13 @@ export default function InventoryView({ onDataChanged }) {
           </button>
         </div>
       </div>
+
+      {scanSuccessMsg && (
+        <div className="rounded-xl bg-emerald-950/50 border border-emerald-700/60 p-4 text-xs text-emerald-300 flex items-center justify-between">
+          <span>{scanSuccessMsg}</span>
+          <button onClick={() => setScanSuccessMsg("")} className="text-emerald-400 hover:text-emerald-200 font-bold ml-2">✕</button>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl bg-red-950/50 border border-red-700/60 p-4 text-xs text-red-300">
@@ -563,6 +683,241 @@ export default function InventoryView({ onDataChanged }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Computer Vision Inventory Scanner Modal */}
+      {showScanModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📷</span>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white">Computer Vision Inventory Scanner</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Upload storage or pantry photos to detect items, count quantities, and reconcile with stock.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowScanModal(false); setScanResult(null); setScanFile(null); }}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Step 1: Upload & Scan */}
+            {!scanResult && (
+              <div className="space-y-4 text-xs">
+                <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 text-center space-y-3">
+                  {scanPreview ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <img src={scanPreview} alt="Inventory Scan Preview" className="max-h-56 rounded-lg object-contain border border-slate-200 dark:border-slate-800 shadow-xs" />
+                      <p className="font-mono text-[11px] text-slate-400">{scanFile?.name} ({(scanFile?.size / 1024).toFixed(1)} KB)</p>
+                      <button
+                        type="button"
+                        onClick={() => { setScanFile(null); setScanPreview(null); }}
+                        className="text-xs text-red-500 hover:underline"
+                      >
+                        Remove photo & choose another
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-3xl mb-2">📸</div>
+                      <p className="font-semibold text-slate-700 dark:text-slate-300">Select or drop a photograph of your shelf, fridge, or pantry</p>
+                      <p className="text-[11px] text-slate-400 mt-1">Supports JPG, PNG, WEBP (up to 10 MB)</p>
+                      <label className="mt-3 inline-block px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold cursor-pointer transition shadow-xs">
+                        Browse Photo
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={handleScanFileChange}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowScanModal(false)}
+                    className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!scanFile || scanning}
+                    onClick={handleScanSubmit}
+                    className="px-5 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 font-bold text-white shadow-sm disabled:opacity-50 transition"
+                  >
+                    {scanning ? "Detecting items with Computer Vision..." : "Scan & Detect Items →"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Detections Review & Reconciliation */}
+            {scanResult && (
+              <div className="space-y-4 text-xs">
+                {scanResult.image_summary && (
+                  <div className="p-3 bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800 rounded-xl text-teal-900 dark:text-teal-300">
+                    <p className="font-semibold text-[11px] uppercase tracking-wider text-teal-700 dark:text-teal-400 mb-0.5">Vision Summary</p>
+                    <p>{scanResult.image_summary}</p>
+                  </div>
+                )}
+
+                {scanResult.warnings?.length > 0 && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-300 space-y-1">
+                    <p className="font-semibold text-[11px] uppercase tracking-wider text-amber-700 dark:text-amber-400">Detection Notes / Warnings</p>
+                    {scanResult.warnings.map((w, idx) => (
+                      <p key={idx}>⚠️ {w}</p>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-slate-900 dark:text-white">Detected Items ({reconcileItems.length}) & Reconciliation Strategy</h4>
+                    <span className="text-[11px] text-slate-400">Choose how each item updates inventory:</span>
+                  </div>
+
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
+                          <th className="p-2.5">Item Name</th>
+                          <th className="p-2.5">Category</th>
+                          <th className="p-2.5 w-24">Detected Qty</th>
+                          <th className="p-2.5 w-20">Unit</th>
+                          <th className="p-2.5">Match Status</th>
+                          <th className="p-2.5">Reconciliation Action</th>
+                          <th className="p-2.5 text-right">Remove</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                        {reconcileItems.map((item, idx) => (
+                          <tr key={idx} className={item.action === "ignore" ? "opacity-50 bg-slate-50/50 dark:bg-slate-950/50" : ""}>
+                            <td className="p-2.5">
+                              <input
+                                type="text"
+                                value={item.name}
+                                onChange={(e) => updateReconcileField(idx, "name", e.target.value)}
+                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs"
+                              />
+                              {item.notes && <p className="text-[10px] text-slate-400 mt-0.5">{item.notes}</p>}
+                            </td>
+                            <td className="p-2.5">
+                              <select
+                                value={item.category}
+                                onChange={(e) => updateReconcileField(idx, "category", e.target.value)}
+                                className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs"
+                              >
+                                <option value="cleaning">Cleaning</option>
+                                <option value="food">Food</option>
+                                <option value="beverage">Beverage</option>
+                                <option value="pantry">Pantry</option>
+                                <option value="paper_goods">Paper Goods</option>
+                                <option value="personal_care">Personal Care</option>
+                                <option value="general">General</option>
+                              </select>
+                            </td>
+                            <td className="p-2.5">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={item.quantity}
+                                onChange={(e) => updateReconcileField(idx, "quantity", Number(e.target.value))}
+                                className="w-20 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-mono"
+                              />
+                            </td>
+                            <td className="p-2.5">
+                              <input
+                                type="text"
+                                value={item.unit}
+                                onChange={(e) => updateReconcileField(idx, "unit", e.target.value)}
+                                className="w-16 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs"
+                              />
+                            </td>
+                            <td className="p-2.5">
+                              {item.matched_item_id ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                                  ✓ Matched (Current: {item.existing_quantity})
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
+                                  ✨ New Item
+                                </span>
+                              )}
+                              {item.confidence && (
+                                <span className="block text-[10px] text-slate-400 mt-0.5">
+                                  Confidence: {Math.round(item.confidence * 100)}%
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              <select
+                                value={item.action}
+                                onChange={(e) => updateReconcileField(idx, "action", e.target.value)}
+                                className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-medium"
+                              >
+                                {item.matched_item_id && <option value="add">➕ Add to Stock (+{item.quantity})</option>}
+                                {item.matched_item_id && <option value="replace">🔄 Replace Count (Exact: {item.quantity})</option>}
+                                <option value="new">✨ Create as New Item</option>
+                                <option value="ignore">✕ Ignore / Skip</option>
+                              </select>
+                            </td>
+                            <td className="p-2.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => removeReconcileItem(idx)}
+                                className="text-red-400 hover:text-red-600 font-bold px-1"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => { setScanResult(null); }}
+                    className="px-3.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 font-semibold text-xs"
+                  >
+                    ← Re-scan photo
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowScanModal(false)}
+                      className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reconciling || reconcileItems.length === 0}
+                      onClick={handleReconcileSubmit}
+                      className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-bold text-white shadow-sm disabled:opacity-50 transition"
+                    >
+                      {reconciling ? "Reconciling Inventory..." : "Confirm & Save Reconciled Inventory"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

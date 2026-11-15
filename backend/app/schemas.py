@@ -57,3 +57,90 @@ class RecordOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class InventoryDetectedItem(BaseModel):
+    name: str = Field(min_length=1)
+    category: str = "general"
+    estimated_quantity: float = Field(ge=0)
+    unit: str = "pcs"
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    brand: str | None = None
+    notes: str | None = None
+    matched_item_id: int | None = None
+    existing_quantity: float | None = None
+
+
+class InventoryScanResponse(BaseModel):
+    detected_items: list[InventoryDetectedItem]
+    image_summary: str = ""
+    warnings: list[str] = Field(default_factory=list)
+
+
+class InventoryReconciliationItem(BaseModel):
+    action: Literal["add", "replace", "new", "ignore"]
+    item_id: int | None = None
+    name: str = Field(min_length=1)
+    quantity: float = Field(ge=0)
+    unit: str = Field(min_length=1)
+    category: str = "general"
+    reorder_threshold: float = Field(default=1.0, ge=0)
+
+
+class InventoryReconciliationRequest(BaseModel):
+    items: list[InventoryReconciliationItem]
+
+
+class InventoryReconciliationResponse(BaseModel):
+    updated_items: list[dict]
+    created_items: list[dict]
+    ignored_count: int
+
+
+class BillExtractionResult(BaseModel):
+    utility_type: Literal["electricity", "water"]
+    provider_name: str | None = None
+    account_number: str | None = None
+    bill_number: str | None = None
+    bill_date: date | None = None
+    due_date: date | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    period_days: int = Field(default=30, ge=1)
+    previous_reading: float | None = Field(default=None, ge=0)
+    current_reading: float | None = Field(default=None, ge=0)
+    consumption: float = Field(ge=0)
+    consumption_unit: str = "kWh"
+    total_amount: float | None = Field(default=None, ge=0)
+    currency: str = "USD"
+    fixed_charges: float | None = Field(default=None, ge=0)
+    variable_charges: float | None = Field(default=None, ge=0)
+    taxes: float | None = Field(default=None, ge=0)
+    other_charges: float | None = Field(default=None, ge=0)
+    confidence_score: float = Field(default=0.85, ge=0.0, le=1.0)
+    warnings: list[str] = Field(default_factory=list)
+    source_filename: str = ""
+
+
+class BillConfirmRequest(BaseModel):
+    utility_type: Literal["electricity", "water"]
+    provider_name: str | None = None
+    account_number: str | None = None
+    bill_number: str | None = None
+    bill_date: date | None = None
+    due_date: date | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    period_days: int = Field(default=30, ge=1)
+    previous_reading: float | None = Field(default=None, ge=0)
+    current_reading: float | None = Field(default=None, ge=0)
+    consumption: float = Field(ge=0)
+    consumption_unit: str = "kWh"
+    total_amount: float | None = Field(default=None, ge=0)
+    currency: str = "USD"
+    fixed_charges: float | None = Field(default=None, ge=0)
+    variable_charges: float | None = Field(default=None, ge=0)
+    taxes: float | None = Field(default=None, ge=0)
+    other_charges: float | None = Field(default=None, ge=0)
+    source_filename: str = "uploaded_bill"
+    sync_reading: bool = True

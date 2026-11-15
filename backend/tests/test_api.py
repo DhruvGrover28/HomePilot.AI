@@ -40,6 +40,7 @@ def test_sensitive_endpoints_reject_unauthenticated_requests():
         assert client.post("/api/agents/runs", json={"goal": "test"}).status_code == 401
         assert client.get("/api/agents/runs").status_code == 401
         assert client.get("/api/intelligence/summary").status_code == 401
+        assert client.get("/api/bills").status_code == 401
 
 
 def test_bad_csv_reports_row_errors():
