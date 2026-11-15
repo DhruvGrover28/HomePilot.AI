@@ -1,98 +1,137 @@
-# HomePilot AI
+# HomePilot AI — Agentic AI Household Operations System
 
-HomePilot AI is an autonomous household operations manager built for IBM SkillsBuild internship submission goals tied to SDGs 7, 11, 12, and 13.
+**HomePilot AI** is an autonomous, agentic AI-powered household operations and resource management system developed as a capstone project for the **IBM SkillsBuild Agentic AI Internship**, supporting UN Sustainable Development Goals (SDGs 7, 11, 12, and 13).
 
-Phase 1 includes the household foundation: SQLite household records, validated reading CSV import, deterministic demo seeding, consumption charts, and CRUD APIs for readings, appliances, inventory, shopping lists and tasks. Agentic features are planned for later phases.
+Rather than acting as a static dashboard or a single-prompt chatbot, HomePilot AI coordinates specialized agents dynamically using actual household telemetry and deterministic Python verification tools.
 
-## Repository Structure
+---
 
-- frontend/
-- backend/
-- n8n/
-- docs/
-- CHANGELOG.md
+## Key Capabilities & Specialist Domains
 
-## Tech Stack in Phase 1
+HomePilot AI operates across four specialist domains:
 
-- Frontend: React plus Tailwind CSS (Vite)
-- Backend: FastAPI (Python)
-- Database: SQLite via SQLAlchemy
+1. **⚡ Energy Specialist**: Evaluates daily electricity consumption rates (`kWh/day`), compares against rolling 30-day baselines, and spots anomalies or seasonal spikes.
+2. **💧 Water Specialist**: Tracks water flow rates (`Litres/day`), executes leak signature heuristics, and flags continuous flow patterns.
+3. **🔧 Maintenance Specialist**: Manages household appliance degradation, warranties, power ratings, and maintenance checklists.
+4. **📦 Inventory Specialist**: Monitors consumable supplies against safety reorder thresholds and automatically populates household shopping lists.
 
-## Prerequisites
+---
 
-- Node.js 18+
+## Agentic Architecture
+
+- **Dynamic LangGraph Supervisor**: Evaluates the user's objective and household evidence to select an appropriate specialist. It evaluates specialist tool findings and decides whether to hand off to another specialist or finalize recommendations.
+- **Bounded Execution Budgets**: Prevents runaway LLM loops with strict limits on iteration depth and specialist invocations.
+- **Deterministic Python Tools**: Mathematical and statistical telemetry computations are executed in deterministic Python tools (`energy_readings`, `water_readings`, `maintenance_statuses`, `inventory_levels`). LLMs do not invent math.
+- **Staggered Provider Race & Failover**: Resilient multi-provider racing across OpenRouter, Groq, and Gemini with sanitized fallback and trace logging.
+- **Continuous Monitoring Engine**: APScheduler runtime continuously executes periodic scans and event-triggered evaluations with full provenance tracking.
+- **Conversational Operational Assistant**: Natural-language chat grounded in real-time household data with the ability to trigger bounded multi-agent investigations.
+- **Strict Household Isolation**: Authenticated sessions strictly partition all database telemetry, agent tool queries, investigations, and monitoring issues by `household_id`. Missing context fails closed.
+
+---
+
+## Tech Stack
+
+- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0, APScheduler, LangGraph, Pydantic v2.
+- **Database**: SQLite (local development) / PostgreSQL with `psycopg[binary]` (production).
+- **Frontend**: React 18, Vite, Tailwind CSS, Recharts.
+- **Deployment**: Render Blueprint (`render.yaml`) for FastAPI Web Service, React Static Site, and Managed PostgreSQL Database.
+
+---
+
+## Getting Started Locally
+
+### Prerequisites
+
 - Python 3.11+
-- Google AI Studio API key
+- Node.js 18+
+- (Optional) Google AI Studio API key, Groq API key, or OpenRouter API key
 
-## Environment Variables
+### 1. Backend Setup
 
-Backend: copy `.env.example` to `.env` if configuration overrides are needed. Phase 1 defaults to mock/offline mode.
+```bash
+# Navigate to backend directory
+cd backend
 
-Frontend (create frontend/.env locally):
-- VITE_API_BASE_URL=http://localhost:8000
+# Create virtual environment (if not already created)
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-## Local Run
+# Install dependencies
+pip install -r requirements.txt
 
-### Backend
+# Start backend server
+uvicorn app.main:app --reload --app-dir backend
+```
 
-1. Install dependencies:
-   pip install -r backend/requirements.txt
-2. Start API:
-   uvicorn app.main:app --reload --app-dir backend
-3. Health check:
-   GET http://localhost:8000/health
+API will be live at `http://localhost:8000`. Health check: `http://localhost:8000/api/health`.
 
-Run backend tests from the backend module root:
+Run backend tests:
+```bash
+# From project root
+pytest backend/tests -q
+```
 
-   cd backend
-   python -m pytest tests -q
+### 2. Frontend Setup
 
-### Frontend
+```bash
+# Navigate to frontend directory
+cd frontend
 
-1. Install dependencies:
-   npm install --prefix frontend
-2. Run development server:
-   npm run dev --prefix frontend
-3. Open local URL shown by Vite.
+# Install dependencies
+npm install
 
-## API
+# Start Vite dev server
+npm run dev
+```
 
-Key endpoints include `GET /api/dashboard/summary`, CRUD endpoints under `/api/readings`, `/api/appliances`, `/api/inventory`, `/api/shopping-list`, and `/api/tasks`, `POST /api/readings/import`, `POST /api/demo/seed`, `POST /api/agents/runs`, and `GET /api/agents/runs/{run_id}`.
+Frontend will be accessible at `http://localhost:5173`.
 
-Phase 2 agent analysis uses a bounded LangGraph Supervisor. `LLM_MODE=mock` runs the same graph offline with structured mock decisions. In live mode, explicit selection uses `LLM_PROVIDER=gemini`, `groq`, or `openrouter`; `LLM_PROVIDER=auto` runs a staggered provider race using the configured `LLM_PROVIDER_ORDER` (default `openrouter,groq,gemini`) at each Supervisor decision. OpenRouter starts immediately, Groq starts after 10 seconds, and Gemini starts after 20 seconds; the shared race deadline is 50 seconds. It never silently switches to mock mode. Configure the selected provider with its API key and model:
+---
 
-- Gemini: `GEMINI_API_KEY` and `GEMINI_MODEL`
-- Groq: `GROQ_API_KEY` and `GROQ_MODEL` (default `openai/gpt-oss-20b`)
-- OpenRouter: `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` (default `anthropic/claude-sonnet-5.5`)
+## Production Deployment on Render
 
-Fallback is limited to provider connection/timeout, rate-limit, server-unavailability, configuration, empty-response and structured-schema failures. Programming errors and valid Supervisor stop decisions do not trigger fallback. Started providers run concurrently; the first valid Pydantic decision wins, while remaining tasks are cancelled on a best-effort basis without waiting for losing requests. Each attempt is recorded in the persisted trace with scheduled/actual start, elapsed time, outcome, cancellation, winner status, failure category and HTTP status where available. If all configured providers fail or the shared deadline expires, the run stops with a sanitized provider-exhaustion event and no specialist tool is executed.
+The repository includes a complete Render Blueprint specification in `render.yaml`:
 
-OpenRouter's `anthropic/claude-sonnet-5.5` model may be routed internally to a hosting provider such as Azure. That internal route is distinct from HomePilot's application-level OpenRouter → Groq → Gemini provider race.
+1. **`homepilot-api`**: FastAPI Python Web Service running on Python 3.13.14.
+2. **`homepilot-web`**: React Static Site with client-side SPA routing rewrites.
+3. **`homepilot-db`**: Managed PostgreSQL database.
 
-## Deployment Plan for Phase 1
+### Deploying via Render Dashboard:
+1. Push repository to GitHub.
+2. In Render, select **New** $\to$ **Blueprint**.
+3. Connect your repository. Render automatically reads `render.yaml` and provisions the database, web service, and static site.
+4. Set required secret environment variables (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`).
 
-- Frontend: Vercel free tier
-- Backend: Render free tier
-- Render Python version: 3.13.14
+---
 
-Deployment status currently pending based on your instruction to complete account project setup after Phase 1 coding.
+## Core API Endpoints
 
-If Render defaults to Python 3.14, keep backend/runtime.txt in place so the backend service uses Python 3.13.14 instead of compiling unsupported wheels from source.
+### Authentication & Household Isolation
+- `POST /api/auth/register`: Create user account & isolated household.
+- `POST /api/auth/login`: Authenticate and receive session token.
+- `POST /api/auth/logout`: Invalidate session.
+- `GET /api/auth/me` & `PATCH /api/auth/me`: Profile & theme settings.
+- `GET /api/auth/household` & `PATCH /api/auth/household`: Household settings & onboarding status.
+- `POST /api/auth/change-password`: Update account password.
 
-## Phase 3 Advance Note
+### Household Telemetry & Specialist Domains
+- `GET /api/dashboard/summary`: High-level operational metrics.
+- `GET /api/readings?type=electricity|water`: List consumption records.
+- `POST /api/readings`: Log new meter reading.
+- `POST /api/readings/import`: Bulk import readings via CSV.
+- `GET /api/appliances` & `POST /api/appliances`: Manage monitored appliances.
+- `GET /api/inventory` & `POST /api/inventory`: Manage consumable supplies.
+- `GET /api/tasks` & `POST /api/tasks`: Manage maintenance tasks.
+- `GET /api/shopping-list` & `POST /api/shopping-list`: Manage shopping items.
 
-n8n will be self-hosted on Render free tier. Free tier instances may cold start after inactivity, which can delay webhook and scheduled flow execution.
-
-## Manual Test Checklist (Phase 1)
-
-1. Start backend and frontend locally.
-2. Upload backend/tests/sample_bank_statement.csv from dashboard.
-3. Verify categorized transactions are shown.
-4. Verify anomalies appear (duplicate and or unusually large).
-5. Confirm upload API returns non-empty upload_id.
-
-## Live Links
-
-Pending creation after Phase 1 code completion and hosting setup:
-- Frontend URL: pending
-- Backend URL: pending
+### Agentic Coordination & Monitoring
+- `POST /api/agents/runs`: Launch LangGraph Supervisor investigation.
+- `GET /api/agents/runs`: List historical investigation traces.
+- `GET /api/agents/runs/{id}`: Detailed trace and candidate evaluations.
+- `GET /api/monitoring/issues`: Active telemetry monitoring issues.
+- `POST /api/monitoring/check`: Trigger manual monitoring sweep.
+- `GET /api/intelligence/summary`: Prioritized issues, evidence-led recommendations, and cross-domain links.
+- `POST /api/assistant/chat`: Converse with the grounded operational assistant.
+- `GET /api/assistant/history`: Retrieve chat history.
+- `DELETE /api/assistant/history`: Clear chat history.
+- `POST /api/demo/seed`: Populate realistic demonstration telemetry strictly in current household.

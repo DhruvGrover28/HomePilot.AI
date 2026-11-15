@@ -1,220 +1,317 @@
-import { useEffect, useState } from "react";
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-
-function SimulatedBadge() {
-  return <span className="ml-2 rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800">simulated</span>;
-}
-
-function ConsumptionChart({ title, rows, color }) {
-  const data = rows.map((row) => ({ date: row.reading_date, rate: row.consumption / row.period_days }));
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold">{title}</h2>
-      <div className="h-56">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip />
-            <Line type="monotone" dataKey="rate" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </section>
-  );
-}
+import React, { useState, useEffect } from "react";
+import { apiJson, apiFetch } from "./api";
+import Navigation from "./components/Navigation";
+import PublicLanding from "./components/PublicLanding";
+import OnboardingWizard from "./components/OnboardingWizard";
+import DashboardView from "./components/DashboardView";
+import EnergyView from "./components/EnergyView";
+import WaterView from "./components/WaterView";
+import MaintenanceView from "./components/MaintenanceView";
+import InventoryView from "./components/InventoryView";
+import MonitoringView from "./components/MonitoringView";
+import InvestigationsView from "./components/InvestigationsView";
+import AssistantView from "./components/AssistantView";
+import SettingsView from "./components/SettingsView";
 
 export default function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [household, setHousehold] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  const [currentView, setCurrentView] = useState("dashboard");
   const [summary, setSummary] = useState(null);
-  const [agentRun, setAgentRun] = useState(null);
   const [monitoringIssues, setMonitoringIssues] = useState([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [intelligence, setIntelligence] = useState(null);
+  const [selectedAgentRun, setSelectedAgentRun] = useState(null);
 
-  async function loadSummary() {
+  const [globalLoading, setGlobalLoading] = useState(true);
+  const [workingAction, setWorkingAction] = useState("");
+  const [bannerError, setBannerError] = useState("");
+
+  // Theme application
+  useEffect(() => {
+    const theme = authUser?.theme_preference || "system";
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else if (theme === "light") {
+      root.classList.remove("dark");
+    } else {
+      // system
+      if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        root.classList.add("dark");
+      } else {
+        root.classList.remove("dark");
+      }
+    }
+  }, [authUser?.theme_preference]);
+
+  // Load user & household on mount
+  async function checkAuth() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/dashboard/summary`);
-      if (!response.ok) throw new Error("Unable to load household data.");
-      setSummary(await response.json());
-    } catch (loadError) {
-      setError(loadError.message);
+      const userRes = await apiFetch("/api/auth/me");
+      if (userRes.ok) {
+        const user = await userRes.json();
+        setAuthUser(user);
+
+        // Fetch household details
+        try {
+          const hhData = await apiJson("/api/auth/household");
+          setHousehold(hhData);
+        } catch {
+          // ignore household fetch error if none exists
+        }
+        await loadHouseholdData();
+      } else {
+        setAuthUser(null);
+        setHousehold(null);
+      }
+    } catch {
+      setAuthUser(null);
+      setHousehold(null);
     } finally {
-      setLoading(false);
+      setAuthChecked(true);
+      setGlobalLoading(false);
     }
   }
 
-  async function loadMonitoring() {
-    const response = await fetch(`${API_BASE_URL}/api/monitoring/issues`);
-    if (!response.ok) throw new Error("Unable to load monitoring activity.");
-    setMonitoringIssues(await response.json());
-  }
-
-  async function seedDemo() {
+  async function loadHouseholdData() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/demo/seed`, { method: "POST" });
-      if (!response.ok) throw new Error("Unable to seed demo data.");
-      await loadSummary();
-      await loadMonitoring();
-    } catch (seedError) {
-      setError(seedError.message);
-    }
+      const [sumData, monData, intData] = await Promise.allSettled([
+        apiJson("/api/dashboard/summary"),
+        apiJson("/api/monitoring/issues"),
+        apiJson("/api/intelligence/summary"),
+      ]);
 
-  }
-
-  async function runMonitoring() {
-    try {
-      setError("");
-      const response = await fetch(`${API_BASE_URL}/api/monitoring/check`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!response.ok) throw new Error("Unable to run monitoring.");
-      setMonitoringIssues(await response.json());
-    } catch (monitoringError) {
-      setError(monitoringError.message);
-    }
-  }
-
-  async function runAnalysis() {
-    try {
-      setError("");
-      const response = await fetch(`${API_BASE_URL}/api/agents/runs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: "Review energy, water, maintenance and inventory priorities." }),
-      });
-      if (!response.ok) throw new Error("Unable to run household analysis.");
-      setAgentRun(await response.json());
-    } catch (runError) {
-      setError(runError.message);
+      if (sumData.status === "fulfilled") setSummary(sumData.value);
+      if (monData.status === "fulfilled") setMonitoringIssues(monData.value);
+      if (intData.status === "fulfilled") setIntelligence(intData.value);
+    } catch (err) {
+      setBannerError(err.message || "Failed to load household operations data.");
     }
   }
 
   useEffect(() => {
-    Promise.all([loadSummary(), loadMonitoring()]).catch((loadError) => setError(loadError.message));
+    checkAuth();
   }, []);
 
-  if (loading) return <main className="p-8">Loading HomePilot...</main>;
+  async function handleLogout() {
+    try {
+      await apiFetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setAuthUser(null);
+      setHousehold(null);
+      setCurrentView("dashboard");
+    }
+  }
+
+  async function handleQuickRunMonitoring() {
+    setWorkingAction("monitoring");
+    setBannerError("");
+    try {
+      const issues = await apiJson("/api/monitoring/check", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setMonitoringIssues(issues);
+      // reload intelligence
+      try {
+        const intData = await apiJson("/api/intelligence/summary");
+        setIntelligence(intData);
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      setBannerError(err.message || "Failed to run monitoring sweep.");
+    } finally {
+      setWorkingAction("");
+    }
+  }
+
+  async function handleRunFullAnalysis() {
+    setWorkingAction("analysis");
+    setBannerError("");
+    try {
+      const run = await apiJson("/api/agents/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          goal: "Review energy, water, maintenance and inventory priorities.",
+        }),
+      });
+      setSelectedAgentRun(run);
+      setCurrentView("investigations");
+      await loadHouseholdData();
+    } catch (err) {
+      setBannerError(err.message || "Failed to run household analysis.");
+    } finally {
+      setWorkingAction("");
+    }
+  }
+
+  async function handleSeedDemoData() {
+    setBannerError("");
+    try {
+      await apiJson("/api/demo/seed", { method: "POST" });
+      await loadHouseholdData();
+    } catch (err) {
+      setBannerError(err.message || "Failed to seed demo data.");
+      throw err;
+    }
+  }
+
+  async function handleUpdateRecommendationStatus(recId, status) {
+    try {
+      await apiJson(`/api/recommendations/${recId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      await loadHouseholdData();
+    } catch (err) {
+      setBannerError(err.message || "Failed to update recommendation status.");
+    }
+  }
+
+  function handleInspectRun(run) {
+    setSelectedAgentRun(run);
+    setCurrentView("investigations");
+  }
+
+  // 1. Initial Loading Screen
+  if (globalLoading) {
+    return (
+      <main className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 p-6 space-y-4">
+        <div className="h-10 w-10 rounded-xl bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-teal-300 font-bold text-xl animate-pulse">
+          HP
+        </div>
+        <p className="text-xs text-slate-400 font-mono tracking-wider uppercase">
+          Initializing HomePilot AI Operations...
+        </p>
+      </main>
+    );
+  }
+
+  // 2. Unauthenticated -> Public Landing & Auth Modal
+  if (!authChecked || !authUser) {
+    return (
+      <PublicLanding
+        onAuthenticated={async (user) => {
+          setAuthUser(user);
+          try {
+            const hh = await apiJson("/api/auth/household");
+            setHousehold(hh);
+          } catch {
+            // ignore
+          }
+          await loadHouseholdData();
+        }}
+      />
+    );
+  }
+
+  // 3. Authenticated but Onboarding Incomplete -> Wizard
+  if (household && !household.onboarding_completed) {
+    return (
+      <OnboardingWizard
+        household={household}
+        onComplete={async () => {
+          const hh = await apiJson("/api/auth/household");
+          setHousehold(hh);
+          await loadHouseholdData();
+        }}
+        onSeedDemo={handleSeedDemoData}
+      />
+    );
+  }
+
+  // 4. Authenticated SaaS App Shell
   return (
-    <main className="mx-auto min-h-screen max-w-7xl space-y-6 p-6 md:p-10">
-      <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Household operations</p>
-          <h1 className="mt-1 text-3xl font-semibold">HomePilot AI</h1>
-          <p className="mt-2 text-slate-600">Monitor consumption, maintenance and supplies from one place.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={runMonitoring} className="rounded-lg border border-teal-700 px-4 py-2 text-sm font-medium text-teal-800">Check monitoring</button>
-          <button onClick={runAnalysis} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white">Run household analysis</button>
-          <button onClick={seedDemo} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Seed simulated demo</button>
-        </div>
-      </header>
-      {error && <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-700">{error}</div>}
-      {summary && (
-        <>
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-xl bg-teal-700 p-5 text-white"><p className="text-sm opacity-80">Electricity periods</p><p className="mt-2 text-3xl font-semibold">{summary.electricity.length}</p></div>
-            <div className="rounded-xl bg-blue-700 p-5 text-white"><p className="text-sm opacity-80">Water periods</p><p className="mt-2 text-3xl font-semibold">{summary.water.length}</p></div>
-            <div className="rounded-xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Open tasks</p><p className="mt-2 text-3xl font-semibold">{summary.tasks_open}</p></div>
-            <div className="rounded-xl bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Appliances</p><p className="mt-2 text-3xl font-semibold">{summary.appliances.length}</p></div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col md:flex-row font-sans selection:bg-teal-500 selection:text-white">
+      {/* Sidebar Navigation */}
+      <Navigation
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        user={authUser}
+        household={household}
+        onLogout={handleLogout}
+        onQuickRunMonitoring={handleQuickRunMonitoring}
+        monitoringCount={monitoringIssues.length}
+      />
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto max-h-screen">
+        {/* Global Alert Banner */}
+        {bannerError && (
+          <div className="m-6 mb-0 p-4 rounded-xl bg-red-950/60 border border-red-700/60 text-xs text-red-300 flex items-center justify-between">
+            <span>{bannerError}</span>
+            <button onClick={() => setBannerError("")} className="text-red-400 hover:text-white text-xs">
+              ✕
+            </button>
           </div>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <ConsumptionChart title="Electricity daily rate (kWh)" rows={summary.electricity} color="#0f766e" />
-            <ConsumptionChart title="Water daily rate (litres)" rows={summary.water} color="#1d4ed8" />
-          </div>
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-lg font-semibold">Monitoring activity</h2>
-              <span className="text-xs text-slate-500">{monitoringIssues.length} detected records</span>
-            </div>
-            {monitoringIssues.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">No monitoring issues detected.</p>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {monitoringIssues.map((issue) => (
-                  <article key={issue.id} className="rounded-lg border border-slate-100 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-semibold">{issue.title}</h3>
-                      <div className="flex gap-2 text-xs uppercase tracking-wide">
-                        <span className={issue.issue_status === "open" ? "text-amber-700" : "text-green-700"}>{issue.issue_status}</span>
-                        <span className="text-slate-500">{issue.investigation_status}</span>
-                      </div>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {issue.domain}{issue.entity_id ? ` #${issue.entity_id}` : ""} · First: {issue.first_trigger_source} · Latest: {issue.last_trigger_source} · Occurrences: {issue.occurrence_count}
-                    </p>
-                    {issue.latest_evidence_id && (
-                      <p className="mt-1 text-xs text-slate-500">Latest evidence reading: {issue.latest_evidence_id}</p>
-                    )}
-                    {issue.latest_run?.findings?.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {issue.latest_run.findings.map((finding) => (
-                          <p key={finding.id} className="text-sm text-slate-600">{finding.summary}</p>
-                        ))}
-                      </div>
-                    )}
-                    {issue.latest_run?.recommendations?.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {issue.latest_run.recommendations.map((recommendation) => (
-                          <p key={`${recommendation.category}-${recommendation.subject}`} className="text-sm text-teal-800">
-                            Recommendation: {recommendation.suggested_action}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Household records</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {summary.appliances.map((appliance) => (
-                <div key={appliance.id} className="rounded-lg border border-slate-100 p-3">
-                  <strong>{appliance.name}</strong>{appliance.is_simulated && <SimulatedBadge />}<p className="mt-1 text-sm text-slate-500">{appliance.category}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-          {agentRun && (
-            <section className="rounded-xl border border-teal-200 bg-teal-50 p-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-lg font-semibold">Household analysis</h2>
-                <span className="text-xs uppercase tracking-wide text-teal-800">{agentRun.mode} mode</span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">{agentRun.goal}</p>
-              <div className="mt-4 space-y-2">
-                {agentRun.findings.map((finding) => (
-                  <article key={finding.id} className="rounded-lg bg-white p-3 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-semibold">{finding.subject}</h3>
-                      <span className="text-xs uppercase tracking-wide text-slate-500">{finding.severity}</span>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">{finding.summary}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {agentRun.recommendations.map((recommendation) => (
-                  <article key={`${recommendation.category}-${recommendation.subject}`} className="rounded-lg bg-white p-4 shadow-sm">
-                    <h3 className="font-semibold">{recommendation.subject}</h3>
-                    <p className="mt-1 text-sm text-slate-600">{recommendation.summary}</p>
-                    <p className="mt-3 text-sm text-slate-800">{recommendation.suggested_action}</p>
-                    <p className="mt-2 text-xs text-slate-500">Score: {recommendation.score.toFixed(1)}</p>
-                  </article>
-                ))}
-              </div>
-              <p className="mt-4 text-xs text-slate-500">
-                Trace: {agentRun.trace.map((step) => step.node || step.kind).join(" -> ")}
-              </p>
-            </section>
+        )}
+
+        {/* View Routing */}
+        <div className="p-6 md:p-8 space-y-6">
+          {currentView === "dashboard" && (
+            <DashboardView
+              summary={summary}
+              monitoringIssues={monitoringIssues}
+              intelligence={intelligence}
+              onNavigate={(v) => setCurrentView(v)}
+              onRunMonitoring={handleQuickRunMonitoring}
+              onRunAnalysis={handleRunFullAnalysis}
+              workingAction={workingAction}
+              onUpdateRecommendationStatus={handleUpdateRecommendationStatus}
+            />
           )}
-        </>
-      )}
-    </main>
+
+          {currentView === "energy" && (
+            <EnergyView onDataChanged={loadHouseholdData} />
+          )}
+
+          {currentView === "water" && (
+            <WaterView onDataChanged={loadHouseholdData} />
+          )}
+
+          {currentView === "maintenance" && (
+            <MaintenanceView onDataChanged={loadHouseholdData} />
+          )}
+
+          {currentView === "inventory" && (
+            <InventoryView onDataChanged={loadHouseholdData} />
+          )}
+
+          {currentView === "monitoring" && (
+            <MonitoringView
+              monitoringIssues={monitoringIssues}
+              onRunMonitoring={handleQuickRunMonitoring}
+              onInspectRun={handleInspectRun}
+              working={workingAction === "monitoring"}
+            />
+          )}
+
+          {currentView === "investigations" && (
+            <InvestigationsView
+              activeRun={selectedAgentRun}
+              onSelectRun={(r) => setSelectedAgentRun(r)}
+            />
+          )}
+
+          {currentView === "assistant" && (
+            <AssistantView onInspectRun={handleInspectRun} />
+          )}
+
+          {currentView === "settings" && (
+            <SettingsView
+              user={authUser}
+              household={household}
+              onUserUpdated={(u) => setAuthUser(u)}
+              onHouseholdUpdated={(h) => setHousehold(h)}
+              onSeedDemo={handleSeedDemoData}
+              onLogout={handleLogout}
+            />
+          )}
+        </div>
+      </main>
+    </div>
   );
 }

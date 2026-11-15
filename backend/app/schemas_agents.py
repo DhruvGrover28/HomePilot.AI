@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 AgentDomain = Literal["energy", "water", "maintenance", "inventory"]
 DecisionAction = Literal["investigate", "stop"]
+RelationshipType = Literal["primary", "confirmed", "plausible"]
 
 
 class SupervisorDecision(BaseModel):
@@ -35,11 +36,34 @@ class Recommendation(BaseModel):
     score: float = Field(ge=0, le=100)
     suppressed: bool = False
     suppression_reason: str | None = None
+    status: Literal["active", "completed", "deferred", "dismissed"] = "active"
+
+
+class UpdateRecommendationStatusRequest(BaseModel):
+    status: Literal["active", "completed", "deferred", "dismissed"]
+
+
+class InvestigationIssueContext(BaseModel):
+    issue_id: str
+    fingerprint: str
+    issue_type: str
+    domain: AgentDomain
+    title: str
+    relationship: RelationshipType
+    relationship_reason: str | None = None
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    priority_factors: dict[str, int] = Field(default_factory=dict)
+
+
+class InvestigationContext(BaseModel):
+    primary_issue_id: str
+    issues: list[InvestigationIssueContext] = Field(min_length=1, max_length=3)
 
 
 class AgentRunCreate(BaseModel):
     goal: str = Field(min_length=1, max_length=500)
     domains: list[AgentDomain] = Field(default_factory=list, max_length=3)
+    investigation_context: InvestigationContext | None = None
 
 
 class AgentRunOut(BaseModel):
@@ -54,4 +78,5 @@ class AgentRunOut(BaseModel):
     stop_reason: str | None = None
     budgets: dict[str, int] = Field(default_factory=dict)
     recommendations: list[dict]
+    investigation_context: InvestigationContext | None = None
     created_at: str

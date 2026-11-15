@@ -1,5 +1,6 @@
 import asyncio
 import time
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from app.config import get_settings
 from app.db import initialize_database
 from app.main import app
+from app.schemas_agents import InvestigationContext, InvestigationIssueContext
 from app.services import agent_graph
 from app.services.agent_graph import GroqDecisionModel, _recommendations, execute_agent
 from app.services.provider_models import (
@@ -16,6 +18,7 @@ from app.services.provider_models import (
     ProviderCallError,
     ProviderExhaustedError,
     StaggeredDecisionModel,
+    decision_prompt,
 )
 
 
@@ -27,9 +30,23 @@ def mock_mode(monkeypatch):
     get_settings.cache_clear()
 
 
+def _auth_client() -> TestClient:
+    client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={
+            "full_name": "Agent Tester",
+            "email": f"{uuid4()}@example.com",
+            "password": "correct horse battery",
+            "confirm_password": "correct horse battery",
+        },
+    )
+    return client
+
+
 def test_agent_run_routes_domains_and_persists_result(mock_mode):
     initialize_database()
-    with TestClient(app) as client:
+    with _auth_client() as client:
         response = client.post(
             "/api/agents/runs",
             json={"goal": "Review energy and supplies.", "domains": ["energy", "inventory"]},
@@ -51,13 +68,88 @@ def test_agent_run_routes_domains_and_persists_result(mock_mode):
 
 def test_agent_run_rejects_unknown_domain_and_missing_run(mock_mode):
     initialize_database()
-    with TestClient(app) as client:
+    with _auth_client() as client:
         response = client.post(
             "/api/agents/runs",
             json={"goal": "Review household.", "domains": ["unknown"]},
         )
         assert response.status_code == 422
         assert client.get("/api/agents/runs/not-a-real-run").status_code == 404
+
+
+def test_investigation_context_is_traced_and_persisted(mock_mode):
+    initialize_database()
+    context = InvestigationContext(
+        primary_issue_id="primary-issue",
+        issues=[
+            InvestigationIssueContext(
+                issue_id="primary-issue",
+                fingerprint="energy:anomaly",
+                issue_type="consumption_anomaly",
+                domain="energy",
+                title="Unusual energy consumption",
+                relationship="primary",
+                evidence={"latest_evidence_reading_id": 42},
+            ),
+            InvestigationIssueContext(
+                issue_id="maintenance-issue",
+                fingerprint="appliance:7:maintenance_overdue",
+                issue_type="maintenance_due",
+                domain="maintenance",
+                title="Maintenance due",
+                relationship="plausible",
+                relationship_reason="The issues affect compatible household concerns.",
+            ),
+        ],
+    )
+    result = execute_agent(
+        "Investigate the energy issue and related household evidence.",
+        ["energy", "maintenance"],
+        investigation_context=context,
+    )
+    decision = next(item for item in result["trace"] if item["kind"] == "decision")
+    assert decision["context_issue_ids"] == ["primary-issue", "maintenance-issue"]
+    assert result["investigation_context"] == context
+
+    with _auth_client() as client:
+        response = client.post(
+            "/api/agents/runs",
+            json={
+                "goal": "Review energy.",
+                "domains": ["energy"],
+                "investigation_context": context.model_dump(mode="json"),
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["investigation_context"]["primary_issue_id"] == "primary-issue"
+
+
+def test_live_prompt_serializes_investigation_context():
+    context = InvestigationContext(
+        primary_issue_id="primary-issue",
+        issues=[
+            InvestigationIssueContext(
+                issue_id="primary-issue",
+                fingerprint="energy:anomaly",
+                issue_type="consumption_anomaly",
+                domain="energy",
+                title="Unusual energy consumption",
+                relationship="primary",
+            )
+        ],
+    )
+    prompt = decision_prompt(
+        {
+            "goal": "Investigate the issue.",
+            "remaining_domains": ["energy"],
+            "investigation_context": context,
+            "decisions": [],
+            "findings": [],
+            "supervisor_budget": 8,
+            "supervisor_calls": 0,
+        }
+    )
+    assert '"primary_issue_id": "primary-issue"' in prompt
 
 
 def test_electricity_spike_can_trigger_maintenance_follow_up(mock_mode, monkeypatch):
@@ -83,6 +175,23 @@ def test_electricity_spike_can_trigger_maintenance_follow_up(mock_mode, monkeypa
     assert decisions[0]["findings_seen"] == 0
     assert decisions[1]["findings_seen"] == 1
     assert result["recommendations"][0]["finding_ids"] == [result["findings"][0]["id"]]
+
+
+def test_normal_energy_evidence_does_not_select_maintenance(mock_mode, monkeypatch):
+    monkeypatch.setitem(
+        agent_graph.TOOLSETS,
+        "energy",
+        (lambda: {
+            "type": "energy_readings",
+            "count": 6,
+            "rates": [10, 10, 10, 10, 10, 10],
+            "statistics": {"mean": 10, "standard_deviation": 0, "count": 6},
+            "anomaly": {"flagged": False, "insufficient_data": False},
+        },),
+    )
+    result = execute_agent("Investigate an electricity issue.", ["energy", "maintenance"])
+    assert [decision["specialist"] for decision in result["decisions"] if decision["action"] == "investigate"] == ["energy"]
+    assert result["decisions"][-1]["action"] == "stop"
 
 
 def test_water_only_concern_does_not_invoke_unrelated_specialists(mock_mode, monkeypatch):
@@ -260,7 +369,7 @@ def test_failover_stops_after_first_success(monkeypatch):
     assert model.last_attempts[0]["success"] is True
 
 
-def test_failover_uses_groq_before_openrouter(monkeypatch):
+def test_failover_prefers_groq_when_gemini_fails(monkeypatch):
     calls = []
 
     class FakeProvider:
@@ -278,8 +387,10 @@ def test_failover_uses_groq_before_openrouter(monkeypatch):
     monkeypatch.setattr("app.services.provider_models._provider_model", lambda name: FakeProvider(name))
     model = StaggeredDecisionModel(["gemini", "groq", "openrouter"], deadline_seconds=0.2, stagger_seconds=0.01)
     asyncio.run(model.decide_async({"goal": "energy", "remaining_domains": ["energy"], "findings": [], "decisions": [], "supervisor_budget": 8, "supervisor_calls": 0}))
-    assert calls == ["gemini", "groq"]
+    assert calls[:2] == ["gemini", "groq"]
     assert model.last_attempts[0]["fallback_triggered"] is True
+    assert next(item for item in model.last_attempts if item["provider"] == "groq")["winner"] is True
+    assert not any(item["winner"] for item in model.last_attempts if item["provider"] == "openrouter")
 
 
 def test_failover_reaches_openrouter_and_records_exhaustion(monkeypatch):
@@ -632,3 +743,108 @@ def test_simultaneous_valid_responses_have_one_winner(monkeypatch):
     model = StaggeredDecisionModel(["openrouter", "groq", "gemini"], deadline_seconds=0.2, stagger_seconds=0)
     asyncio.run(model.decide_async(_race_state()))
     assert sum(item["winner"] for item in model.last_attempts) == 1
+
+
+def test_repeatable_energy_to_supervisor_to_maintenance_demo(monkeypatch, mock_mode):
+    """Repeatable Demo Scenario 1 (Anomaly):
+    Energy spike detected -> finding suggests maintenance -> Supervisor routes to Maintenance specialist."""
+    monkeypatch.setattr(
+        "app.services.agent_graph.TOOLSETS",
+        {
+            "energy": [
+                lambda household_id=None: {
+                    "count": 6,
+                    "anomaly": {"flagged": True, "details": "Recent 3.5x consumption spike"},
+                    "rates": [10.0, 10.0, 10.0, 10.0, 10.0, 35.0],
+                }
+            ],
+            "maintenance": [
+                lambda household_id=None: {
+                    "items": [
+                        {
+                            "name": "HVAC Heat Pump",
+                            "warranty": {"status": "expired"},
+                            "maintenance": {"status": "overdue"},
+                        }
+                    ]
+                }
+            ],
+            "water": [],
+            "inventory": [],
+        },
+    )
+
+    result = execute_agent(
+        goal="Investigate electricity consumption spike and check appliances.",
+        domains=["energy", "maintenance"],
+        supervisor_budget=6,
+        specialist_budget=4,
+        household_id="hh-demo-test",
+    )
+
+    assert result["status"] == "completed"
+    scopes_contacted = [step.get("scope") for step in result["trace"] if step.get("kind") == "tool_call"]
+    assert "energy_specialist" in scopes_contacted
+    assert "maintenance_specialist" in scopes_contacted
+
+    # Verify supervisor routing rationale
+    supervisor_decisions = [d for d in result["decisions"] if d.get("action") == "investigate"]
+    assert len(supervisor_decisions) >= 2
+    assert supervisor_decisions[0]["specialist"] == "energy"
+    assert supervisor_decisions[1]["specialist"] == "maintenance"
+    assert supervisor_decisions[1]["next_investigation"] == "maintenance"
+
+    # Verify findings contain energy spike and maintenance follow-up
+    categories = [f["category"] for f in result["findings"]]
+    assert "consumption" in categories
+    assert "maintenance" in categories
+    assert len(result["recommendations"]) > 0
+
+
+def test_repeatable_energy_normal_scenario_stops(monkeypatch, mock_mode):
+    """Repeatable Demo Scenario 2 (Normal Baseline):
+    No energy spike -> finding suggests NO maintenance -> Supervisor stops without calling Maintenance."""
+    monkeypatch.setattr(
+        "app.services.agent_graph.TOOLSETS",
+        {
+            "energy": [
+                lambda household_id=None: {
+                    "count": 6,
+                    "anomaly": {"flagged": False, "details": "Normal baseline"},
+                    "rates": [10.0, 10.2, 9.8, 10.1, 10.0, 10.1],
+                }
+            ],
+            "maintenance": [
+                lambda household_id=None: {
+                    "items": [
+                        {
+                            "name": "HVAC Heat Pump",
+                            "warranty": {"status": "active"},
+                            "maintenance": {"status": "ok"},
+                        }
+                    ]
+                }
+            ],
+            "water": [],
+            "inventory": [],
+        },
+    )
+
+    result = execute_agent(
+        goal="Review electricity consumption.",
+        domains=["energy", "maintenance"],
+        supervisor_budget=6,
+        specialist_budget=4,
+        household_id="hh-demo-test",
+    )
+
+    assert result["status"] == "completed"
+    scopes_contacted = [step.get("scope") for step in result["trace"] if step.get("kind") == "tool_call"]
+    assert "energy_specialist" in scopes_contacted
+    # Critical requirement: Maintenance specialist was NOT selected or called
+    assert "maintenance_specialist" not in scopes_contacted
+
+    # Finding had no suggested next investigation
+    energy_findings = [f for f in result["findings"] if f["category"] == "consumption"]
+    assert len(energy_findings) == 1
+    assert energy_findings[0]["suggested_next_investigation"] is None

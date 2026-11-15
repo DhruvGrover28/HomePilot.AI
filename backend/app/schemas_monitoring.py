@@ -17,6 +17,12 @@ InvestigationStatus = Literal[
     "interrupted",
 ]
 TriggerSource = Literal["scheduled", "event", "manual"]
+RelationshipType = Literal["confirmed", "plausible", "unrelated"]
+
+
+class MonitoringRelationship(BaseModel):
+    relationship: RelationshipType
+    reason: str
 
 
 class MonitoringCandidate(BaseModel):

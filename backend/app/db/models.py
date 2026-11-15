@@ -10,9 +10,47 @@ class Timestamped:
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class User(Timestamped, Base):
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    theme_preference: Mapped[str] = mapped_column(String(20), default="system", nullable=False)
+
+
+class Household(Timestamped, Base):
+    __tablename__ = "households"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
+    preferred_units: Mapped[str] = mapped_column(String(20), default="metric", nullable=False)
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class AssistantMessage(Timestamped, Base):
+    __tablename__ = "assistant_messages"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+
+
+class UserSession(Timestamped, Base):
+    __tablename__ = "user_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Reading(Timestamped, Base):
     __tablename__ = "readings"
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     reading_date: Mapped[date] = mapped_column(Date, nullable=False)
     meter_value: Mapped[float | None] = mapped_column(Float)
@@ -27,6 +65,7 @@ class Reading(Timestamped, Base):
 class Appliance(Timestamped, Base):
     __tablename__ = "appliances"
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     category: Mapped[str] = mapped_column(String(80), nullable=False)
     rated_watts: Mapped[float | None] = mapped_column(Float)
@@ -40,6 +79,7 @@ class Appliance(Timestamped, Base):
 class InventoryItem(Timestamped, Base):
     __tablename__ = "inventory_items"
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     unit: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -50,6 +90,7 @@ class InventoryItem(Timestamped, Base):
 class InventoryLog(Timestamped, Base):
     __tablename__ = "inventory_log"
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("inventory_items.id"), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -60,6 +101,7 @@ class InventoryLog(Timestamped, Base):
 class ShoppingListItem(Timestamped, Base):
     __tablename__ = "shopping_list"
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     item_name: Mapped[str] = mapped_column(String(120), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     unit: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -69,6 +111,7 @@ class ShoppingListItem(Timestamped, Base):
 class Task(Timestamped, Base):
     __tablename__ = "tasks"
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     appliance_id: Mapped[int | None] = mapped_column(ForeignKey("appliances.id"))
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -79,6 +122,7 @@ class Task(Timestamped, Base):
 class AgentRun(Timestamped, Base):
     __tablename__ = "agent_runs"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     domains: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -90,6 +134,7 @@ class AgentRun(Timestamped, Base):
 class MonitoringIssue(Timestamped, Base):
     __tablename__ = "monitoring_issues"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id"), index=True)
     fingerprint: Mapped[str] = mapped_column(String(160), unique=True, nullable=False)
     issue_type: Mapped[str] = mapped_column(String(60), nullable=False)
     domain: Mapped[str] = mapped_column(String(30), nullable=False)

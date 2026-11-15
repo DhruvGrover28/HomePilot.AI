@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from uuid import uuid4
 
+from sqlalchemy import select
 from app import clock
 from app.config import get_settings
 from app.db.models import AgentRun
@@ -23,6 +24,7 @@ def run_agent(
     *,
     supervisor_budget: int = SUPERVISOR_BUDGET,
     specialist_budget: int = SPECIALIST_BUDGET,
+    household_id: str | None = None,
 ) -> dict:
     settings = get_settings()
     if settings.llm_mode != "mock":
@@ -36,10 +38,18 @@ def run_agent(
     unknown = set(domains) - set(DOMAINS)
     if unknown:
         raise ValueError(f"Unsupported agent domain: {', '.join(sorted(unknown))}")
-    result = execute_agent(payload.goal, domains, supervisor_budget, specialist_budget)
+    result = execute_agent(
+        payload.goal,
+        domains,
+        supervisor_budget,
+        specialist_budget,
+        payload.investigation_context,
+        household_id=household_id,
+    )
     with SessionLocal() as session:
         run = AgentRun(
             id=str(uuid4()),
+            household_id=household_id,
             goal=payload.goal,
             domains=",".join(domains),
             status=result["status"],
@@ -54,6 +64,11 @@ def run_agent(
                         "supervisor": supervisor_budget,
                         "specialist": specialist_budget,
                     },
+                    "investigation_context": (
+                        result["investigation_context"].model_dump(mode="json")
+                        if result.get("investigation_context")
+                        else None
+                    ),
                 }
             ),
             recommendations_json=json.dumps(result["recommendations"]),
@@ -78,11 +93,22 @@ def _serialize_run(run: AgentRun) -> dict:
         "stop_reason": stored.get("stop_reason"),
         "budgets": stored.get("budgets", {}),
         "recommendations": json.loads(run.recommendations_json),
+        "investigation_context": stored.get("investigation_context"),
         "created_at": run.created_at.isoformat(),
     }
 
 
-def get_agent_run(run_id: str) -> dict | None:
+def get_agent_run(run_id: str, *, household_id: str | None = None) -> dict | None:
     with SessionLocal() as session:
-        run = session.get(AgentRun, run_id)
+        condition = (
+            AgentRun.household_id == household_id
+            if household_id is not None
+            else AgentRun.household_id.is_(None)
+        )
+        run = session.scalar(
+            select(AgentRun).where(
+                AgentRun.id == run_id,
+                condition,
+            )
+        )
         return _serialize_run(run) if run else None

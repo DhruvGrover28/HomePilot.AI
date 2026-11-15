@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app import clock
 from app.db.models import MonitoringIssue
 from app.db.session import SessionLocal
-from app.schemas_agents import AgentRunCreate
+from app.schemas_agents import AgentRunCreate, InvestigationContext
 from app.services.agent_service import run_agent
 
 
@@ -41,7 +41,16 @@ class MonitoringExecutor:
             self._slots = BoundedSemaphore(self._max_slots)
             self._accepting = True
 
-    def submit(self, issue_id: str, investigation_id: str, goal: str, domains: list[str]) -> bool:
+    def submit(
+        self,
+        issue_id: str,
+        investigation_id: str,
+        goal: str,
+        domains: list[str],
+        *,
+        investigation_context: InvestigationContext | None = None,
+        household_id: str | None = None,
+    ) -> bool:
         with self._lock:
             executor = self._executor
             slots = self._slots
@@ -56,6 +65,8 @@ class MonitoringExecutor:
                     investigation_id,
                     goal,
                     domains,
+                    investigation_context,
+                    household_id,
                 )
             except RuntimeError as exc:
                 slots.release()
@@ -102,17 +113,34 @@ class MonitoringExecutor:
         investigation_id: str,
         goal: str,
         domains: list[str],
+        investigation_context: InvestigationContext | None = None,
+        household_id: str | None = None,
     ) -> None:
         try:
             started_at = clock.now()
             with SessionLocal() as session:
                 issue = session.get(MonitoringIssue, issue_id)
-                if issue is None or issue.investigation_id != investigation_id:
+                if (
+                    issue is None
+                    or issue.investigation_id != investigation_id
+                    or (
+                        household_id is not None
+                        and issue.household_id != household_id
+                    )
+                ):
                     return
                 issue.investigation_status = "investigating"
                 issue.started_at = started_at
                 session.commit()
-            result = run_agent(AgentRunCreate(goal=goal, domains=domains))
+            payload = AgentRunCreate(
+                goal=goal,
+                domains=domains,
+                investigation_context=investigation_context,
+            )
+            if household_id is None:
+                result = run_agent(payload)
+            else:
+                result = run_agent(payload, household_id=household_id)
             investigation_status = (
                 "provider_exhausted"
                 if result.get("stop_reason") == "provider_exhausted"
@@ -120,7 +148,14 @@ class MonitoringExecutor:
             )
             with SessionLocal() as session:
                 issue = session.get(MonitoringIssue, issue_id)
-                if issue is None or issue.investigation_id != investigation_id:
+                if (
+                    issue is None
+                    or issue.investigation_id != investigation_id
+                    or (
+                        household_id is not None
+                        and issue.household_id != household_id
+                    )
+                ):
                     return
                 issue.investigation_status = investigation_status
                 issue.active_run_id = None

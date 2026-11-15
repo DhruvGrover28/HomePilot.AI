@@ -37,7 +37,7 @@ has been performed yet; that requires explicit user approval.
 
 ## Verification completed
 
-- Backend regression suite: **39 passed, 13 warnings**.
+- Backend regression suite at Phase 3 completion: **45 passed, 13 warnings**.
 - Focused monitoring and executor tests passed, including:
   - stable fingerprints and latest evidence;
   - positive-only resolution;

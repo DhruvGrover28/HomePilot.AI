@@ -1,5 +1,27 @@
 # HomePilot AI Changelog
 
+## Phase 5 - 2026-11-15
+- Implemented end-to-end security and household isolation: scoped agent tools (`energy_readings`, `water_readings`, `maintenance_statuses`, `inventory_levels`), LangGraph `AgentState`, agent service, monitoring queries, and demo seeding by `household_id`, failing closed on missing context.
+- Protected sensitive APIs with mandatory authentication (`get_current_household`) while keeping public health, login, and registration open.
+- Added user profile management, theme preference (`light`, `dark`, `system`), password change, and household configuration (`timezone`, `preferred_units`, `onboarding_completed`).
+- Built 4-step interactive onboarding wizard (`OnboardingWizard.jsx`) for new households.
+- Redesigned frontend into a modular SaaS application shell with responsive navigation and dedicated specialist views:
+  - `EnergyView.jsx`: Consumption metrics, daily rate chart, manual logging, CSV import.
+  - `WaterView.jsx`: Volume tracking, daily rate chart, leak indicators, CSV import.
+  - `MaintenanceView.jsx`: Appliance directory, warranty tracking, interactive tasks checklist.
+  - `InventoryView.jsx`: Consumables stock levels, safety thresholds, stock adjusters, shopping list.
+  - `MonitoringView.jsx`: Active engine issues, trigger provenance, occurrence counts, filter tabs.
+  - `InvestigationsView.jsx`: Dynamic LangGraph Supervisor timeline visualization, candidate evaluations, tool traces, findings, and scored recommendations.
+  - `AssistantView.jsx`: Conversational operational AI grounded in household telemetry with history persistence and linked investigation viewer.
+  - `SettingsView.jsx`: Profile, household settings, password update, and scoped demo seeding.
+- Added Render deployment blueprint (`render.yaml`) with PostgreSQL database resource and `psycopg[binary]` production engine support.
+
+## Phase 4 - 2026-11-15
+- Added deterministic Household Intelligence service (`intelligence.py`) and API endpoint (`GET /api/intelligence/summary`).
+- Implemented cross-domain relationship discovery between consumption anomalies, appliance degradation, and inventory stockouts.
+- Added evidence-based recommendation scoring, ranking, and suppression of ungrounded advice.
+- Added comprehensive intelligence test coverage and regression test suites.
+
 ## Phase 3 - 2026-11-15
 - Added shared deterministic scheduled, event-driven and manual household monitoring.
 - Added persistent stable issue fingerprints, independent issue/investigation lifecycles and positive-only resolution.

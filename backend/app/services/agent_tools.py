@@ -9,11 +9,19 @@ from app.db.session import SessionLocal
 from app.domain import consumption_stats, detect_anomaly, maintenance_status, warranty_status
 
 
-def energy_readings() -> dict:
+def energy_readings(household_id: str | None = None) -> dict:
+    if not household_id:
+        return {
+            "type": "energy_readings",
+            "count": 0,
+            "latest_date": None,
+            "rates": [],
+            "statistics": consumption_stats([]),
+            "anomaly": {"insufficient_data": True},
+        }
     with SessionLocal() as session:
-        rows = session.scalars(
-            select(Reading).where(Reading.type == "electricity").order_by(Reading.reading_date)
-        ).all()
+        query = select(Reading).where(Reading.type == "electricity", Reading.household_id == household_id)
+        rows = session.scalars(query.order_by(Reading.reading_date)).all()
     rates = [row.consumption / row.period_days for row in rows]
     anomaly = detect_anomaly(rates, rates[-1]) if rates else {"insufficient_data": True}
     return {
@@ -26,11 +34,19 @@ def energy_readings() -> dict:
     }
 
 
-def water_readings() -> dict:
+def water_readings(household_id: str | None = None) -> dict:
+    if not household_id:
+        return {
+            "type": "water_readings",
+            "count": 0,
+            "latest_date": None,
+            "rates": [],
+            "statistics": consumption_stats([]),
+            "anomaly": {"insufficient_data": True},
+        }
     with SessionLocal() as session:
-        rows = session.scalars(
-            select(Reading).where(Reading.type == "water").order_by(Reading.reading_date)
-        ).all()
+        query = select(Reading).where(Reading.type == "water", Reading.household_id == household_id)
+        rows = session.scalars(query.order_by(Reading.reading_date)).all()
     rates = [row.consumption / row.period_days for row in rows]
     anomaly = detect_anomaly(rates, rates[-1]) if rates else {"insufficient_data": True}
     return {
@@ -43,10 +59,17 @@ def water_readings() -> dict:
     }
 
 
-def maintenance_statuses() -> dict:
+def maintenance_statuses(household_id: str | None = None) -> dict:
     today = clock.now().date()
+    if not household_id:
+        return {
+            "type": "maintenance_statuses",
+            "today": today.isoformat(),
+            "items": [],
+        }
     with SessionLocal() as session:
-        rows = session.scalars(select(Appliance).order_by(Appliance.name)).all()
+        query = select(Appliance).where(Appliance.household_id == household_id).order_by(Appliance.name)
+        rows = session.scalars(query).all()
     return {
         "type": "maintenance_statuses",
         "today": today.isoformat(),
@@ -63,9 +86,15 @@ def maintenance_statuses() -> dict:
     }
 
 
-def inventory_levels() -> dict:
+def inventory_levels(household_id: str | None = None) -> dict:
+    if not household_id:
+        return {
+            "type": "inventory_levels",
+            "items": [],
+        }
     with SessionLocal() as session:
-        rows = session.scalars(select(InventoryItem).order_by(InventoryItem.name)).all()
+        query = select(InventoryItem).where(InventoryItem.household_id == household_id).order_by(InventoryItem.name)
+        rows = session.scalars(query).all()
     return {
         "type": "inventory_levels",
         "items": [

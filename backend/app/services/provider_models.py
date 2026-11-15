@@ -63,6 +63,8 @@ class ProviderDecisionModel(Protocol):
 
 
 def decision_prompt(state: dict[str, Any]) -> str:
+    context = state.get("investigation_context")
+    context_payload = context.model_dump(mode="json") if context is not None else None
     return (
         "You are a bounded household investigation supervisor. "
         "Return one JSON object matching the requested decision schema. "
@@ -71,6 +73,7 @@ def decision_prompt(state: dict[str, Any]) -> str:
         "Never perform tools or modify data. "
         f"Goal: {state['goal']}\n"
         f"Available specialists: {state['remaining_domains']}\n"
+        f"Investigation context: {json.dumps(context_payload)}\n"
         f"Previous decisions: {json.dumps(state['decisions'])}\n"
         f"Findings from tools: {json.dumps(state['findings'])}\n"
         f"Supervisor calls remaining: {state['supervisor_budget'] - state['supervisor_calls']}\n"

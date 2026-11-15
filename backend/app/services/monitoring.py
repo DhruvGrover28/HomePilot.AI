@@ -13,12 +13,93 @@ from app.config import get_settings
 from app.db.models import Appliance, InventoryItem, MonitoringIssue, Reading
 from app.db.session import SessionLocal
 from app.domain import consumption_stats, detect_anomaly, maintenance_status, warranty_status
-from app.schemas_monitoring import MonitoringCandidate, MonitoringIssueOut, TriggerSource
+from app.schemas_agents import InvestigationContext, InvestigationIssueContext
+from app.schemas_monitoring import (
+    MonitoringCandidate,
+    MonitoringIssueOut,
+    MonitoringRelationship,
+    TriggerSource,
+)
+from app.services.intelligence import monitoring_priority_factors
 from app.services.monitoring_executor import MonitoringExecutor
 
 
 SUPPORTED_DOMAINS = ("energy", "water", "maintenance", "inventory")
 _claim_lock = Lock()
+
+
+def classify_issue_relationship(
+    primary: MonitoringIssueOut,
+    related: MonitoringIssueOut,
+) -> MonitoringRelationship:
+    if (
+        primary.entity_id is not None
+        and related.entity_id is not None
+        and primary.entity_id == related.entity_id
+    ):
+        return MonitoringRelationship(
+            relationship="confirmed",
+            reason="Both issues identify the same household entity.",
+        )
+    if {primary.domain, related.domain} == {"energy", "maintenance"}:
+        return MonitoringRelationship(
+            relationship="plausible",
+            reason="Energy and maintenance evidence may describe a related household concern, but no shared entity is recorded.",
+        )
+    return MonitoringRelationship(
+        relationship="unrelated",
+        reason="No deterministic entity, domain or evidence rule connects these issues.",
+    )
+
+
+def build_investigation_context(
+    issue_id: str,
+    *,
+    household_id: str | None = None,
+) -> InvestigationContext | None:
+    primary = get_monitoring_issue(issue_id, household_id=household_id)
+    if primary is None:
+        return None
+    related: list[tuple[int, MonitoringIssueOut, MonitoringRelationship]] = []
+    for candidate in list_monitoring_issues(
+        issue_status="open",
+        household_id=household_id,
+    ):
+        if candidate.id == primary.id:
+            continue
+        relationship = classify_issue_relationship(primary, candidate)
+        if relationship.relationship == "unrelated":
+            continue
+        relationship_rank = 0 if relationship.relationship == "confirmed" else 1
+        related.append((relationship_rank, candidate, relationship))
+    related.sort(key=lambda item: (item[0], -item[1].last_detected_at.timestamp(), item[1].fingerprint))
+    issue_contexts = [
+        InvestigationIssueContext(
+            issue_id=primary.id,
+            fingerprint=primary.fingerprint,
+            issue_type=primary.issue_type,
+            domain=primary.domain,
+            title=primary.title,
+            relationship="primary",
+            evidence=primary.details,
+            priority_factors=monitoring_priority_factors(primary),
+        )
+    ]
+    for _, candidate, relationship in related[:2]:
+        issue_contexts.append(
+            InvestigationIssueContext(
+                issue_id=candidate.id,
+                fingerprint=candidate.fingerprint,
+                issue_type=candidate.issue_type,
+                domain=candidate.domain,
+                title=candidate.title,
+                relationship=relationship.relationship,
+                relationship_reason=relationship.reason,
+                evidence=candidate.details,
+                priority_factors=monitoring_priority_factors(candidate),
+            )
+        )
+    return InvestigationContext(primary_issue_id=primary.id, issues=issue_contexts)
 
 
 def _reading_candidate(kind: str, rows: list[Reading]) -> MonitoringCandidate | None:
@@ -182,15 +263,21 @@ def _upsert_candidate(
     candidate: MonitoringCandidate,
     trigger_source: TriggerSource,
     detected_at: datetime,
+    household_id: str | None = None,
 ) -> MonitoringIssue:
+    fingerprint = (
+        f"{household_id}:{candidate.fingerprint}"
+        if household_id is not None
+        else candidate.fingerprint
+    )
     issue = session.scalar(
-        select(MonitoringIssue).where(MonitoringIssue.fingerprint == candidate.fingerprint)
+        select(MonitoringIssue).where(MonitoringIssue.fingerprint == fingerprint)
     )
     details_json = json.dumps(candidate.details)
     if issue is None:
         issue = MonitoringIssue(
             id=str(uuid4()),
-            fingerprint=candidate.fingerprint,
+            fingerprint=fingerprint,
             issue_type=candidate.issue_type,
             domain=candidate.domain,
             entity_id=candidate.entity_id,
@@ -205,6 +292,7 @@ def _upsert_candidate(
             latest_evidence_id=candidate.evidence_id,
             details_json=details_json,
             investigation_status="not_started",
+            household_id=household_id,
         )
         session.add(issue)
         return issue
@@ -232,16 +320,18 @@ def _resolve_issues(
     domains: set[str],
     resolvable_fingerprints: set[str],
     resolved_at: datetime,
+    household_id: str | None = None,
 ) -> None:
     if not resolvable_fingerprints:
         return
-    issues = session.scalars(
-        select(MonitoringIssue).where(
+    query = select(MonitoringIssue).where(
             MonitoringIssue.issue_status == "open",
             MonitoringIssue.domain.in_(domains),
             MonitoringIssue.fingerprint.in_(resolvable_fingerprints),
         )
-    ).all()
+    if household_id is not None:
+        query = query.where(MonitoringIssue.household_id == household_id)
+    issues = session.scalars(query).all()
     for issue in issues:
         issue.issue_status = "resolved"
         issue.resolved_at = resolved_at
@@ -250,6 +340,7 @@ def _resolve_issues(
 def evaluate_monitoring(
     trigger_source: TriggerSource,
     domains: Iterable[str] | None = None,
+    household_id: str | None = None,
 ) -> list[MonitoringIssueOut]:
     selected = _domains_or_all(domains)
     detected_at = clock.now()
@@ -257,22 +348,20 @@ def evaluate_monitoring(
     resolvable_fingerprints: set[str] = set()
     with SessionLocal() as session:
         if "energy" in selected:
-            rows = session.scalars(
-                select(Reading)
-                .where(Reading.type == "electricity")
-                .order_by(Reading.reading_date, Reading.id)
-            ).all()
+            query = select(Reading).where(Reading.type == "electricity")
+            if household_id is not None:
+                query = query.where(Reading.household_id == household_id)
+            rows = session.scalars(query.order_by(Reading.reading_date, Reading.id)).all()
             candidate = _reading_candidate("energy", rows)
             if candidate:
                 candidates.append(candidate)
             elif _reading_is_resolvable(rows):
                 resolvable_fingerprints.add("energy:anomaly")
         if "water" in selected:
-            rows = session.scalars(
-                select(Reading)
-                .where(Reading.type == "water")
-                .order_by(Reading.reading_date, Reading.id)
-            ).all()
+            query = select(Reading).where(Reading.type == "water")
+            if household_id is not None:
+                query = query.where(Reading.household_id == household_id)
+            rows = session.scalars(query.order_by(Reading.reading_date, Reading.id)).all()
             candidate = _reading_candidate("water", rows)
             if candidate:
                 candidates.append(candidate)
@@ -280,36 +369,81 @@ def evaluate_monitoring(
                 resolvable_fingerprints.add("water:anomaly")
         if "maintenance" in selected:
             maintenance_candidates, maintenance_resolvable = _maintenance_candidates(
-                session.scalars(select(Appliance).order_by(Appliance.id)).all(),
+                session.scalars(
+                    select(Appliance)
+                    .where(
+                        Appliance.household_id == household_id
+                        if household_id is not None
+                        else True
+                    )
+                    .order_by(Appliance.id)
+                ).all(),
                 detected_at.date(),
             )
             candidates.extend(maintenance_candidates)
             resolvable_fingerprints.update(maintenance_resolvable)
         if "inventory" in selected:
             inventory_candidates, inventory_resolvable = _inventory_candidates(
-                session.scalars(select(InventoryItem).order_by(InventoryItem.id)).all()
+                session.scalars(
+                    select(InventoryItem)
+                    .where(
+                        InventoryItem.household_id == household_id
+                        if household_id is not None
+                        else True
+                    )
+                    .order_by(InventoryItem.id)
+                ).all()
             )
             candidates.extend(inventory_candidates)
             resolvable_fingerprints.update(inventory_resolvable)
         for candidate in candidates:
-            _upsert_candidate(session, candidate, trigger_source, detected_at)
-        _resolve_issues(session, selected, resolvable_fingerprints, detected_at)
+            _upsert_candidate(
+                session,
+                candidate,
+                trigger_source,
+                detected_at,
+                household_id,
+            )
+        scoped_resolvable = {
+            (
+                f"{household_id}:{fingerprint}"
+                if household_id is not None
+                else fingerprint
+            )
+            for fingerprint in resolvable_fingerprints
+        }
+        _resolve_issues(
+            session,
+            selected,
+            scoped_resolvable,
+            detected_at,
+            household_id,
+        )
         session.commit()
         fingerprints = {candidate.fingerprint for candidate in candidates} | resolvable_fingerprints
-        issues = session.scalars(
-            select(MonitoringIssue)
-            .where(
-                MonitoringIssue.domain.in_(selected),
-                MonitoringIssue.fingerprint.in_(fingerprints),
-            )
-            .order_by(MonitoringIssue.last_detected_at.desc())
-        ).all()
+        query = select(MonitoringIssue).where(
+            MonitoringIssue.domain.in_(selected),
+            MonitoringIssue.fingerprint.in_(
+                {
+                    (
+                        f"{household_id}:{fingerprint}"
+                        if household_id is not None
+                        else fingerprint
+                    )
+                    for fingerprint in fingerprints
+                }
+            ),
+        )
+        if household_id is not None:
+            query = query.where(MonitoringIssue.household_id == household_id)
+        issues = session.scalars(query.order_by(MonitoringIssue.last_detected_at.desc())).all()
         return [_serialize_issue(issue) for issue in issues]
 
 
 def list_monitoring_issues(
     *,
     issue_status: str | None = None,
+    household_id: str | None = None,
 ) -> list[MonitoringIssueOut]:
     with SessionLocal() as session:
         query = select(MonitoringIssue).order_by(MonitoringIssue.last_detected_at.desc())
@@ -317,12 +451,25 @@ def list_monitoring_issues(
             if issue_status not in {"open", "resolved"}:
                 raise ValueError("issue_status must be open or resolved.")
             query = query.where(MonitoringIssue.issue_status == issue_status)
+        if household_id is not None:
+            query = query.where(MonitoringIssue.household_id == household_id)
+        else:
+            query = query.where(MonitoringIssue.household_id.is_(None))
         return [_serialize_issue(issue) for issue in session.scalars(query).all()]
 
 
-def get_monitoring_issue(issue_id: str) -> MonitoringIssueOut | None:
+def get_monitoring_issue(
+    issue_id: str,
+    *,
+    household_id: str | None = None,
+) -> MonitoringIssueOut | None:
     with SessionLocal() as session:
-        issue = session.get(MonitoringIssue, issue_id)
+        query = select(MonitoringIssue).where(MonitoringIssue.id == issue_id)
+        if household_id is not None:
+            query = query.where(MonitoringIssue.household_id == household_id)
+        else:
+            query = query.where(MonitoringIssue.household_id.is_(None))
+        issue = session.scalar(query)
         return _serialize_issue(issue) if issue else None
 
 
@@ -332,12 +479,21 @@ def queue_issue_investigation(
     goal: str,
     domains: list[str],
     executor: MonitoringExecutor,
+    investigation_context: InvestigationContext | None = None,
+    household_id: str | None = None,
 ) -> bool:
     with _claim_lock:
         investigation_id = str(uuid4())
         with SessionLocal() as session:
             issue = session.get(MonitoringIssue, issue_id)
-            if issue is None or issue.issue_status != "open":
+            if (
+                issue is None
+                or issue.issue_status != "open"
+                or (
+                    household_id is not None
+                    and issue.household_id != household_id
+                )
+            ):
                 return False
             if issue.investigation_status in {"queued", "investigating"}:
                 return False
@@ -349,7 +505,16 @@ def queue_issue_investigation(
             issue.active_run_id = None
             issue.last_error = None
             session.commit()
-        return executor.submit(issue_id, investigation_id, goal, domains)
+        submit_kwargs = {"investigation_context": investigation_context}
+        if household_id is not None:
+            submit_kwargs["household_id"] = household_id
+        return executor.submit(
+            issue_id,
+            investigation_id,
+            goal,
+            domains,
+            **submit_kwargs,
+        )
 
 
 def monitor_and_investigate(
@@ -357,22 +522,34 @@ def monitor_and_investigate(
     *,
     domains: Iterable[str] | None,
     executor: MonitoringExecutor,
+    household_id: str | None = None,
 ) -> list[MonitoringIssueOut]:
-    issues = evaluate_monitoring(trigger_source, domains)
+    issues = evaluate_monitoring(trigger_source, domains, household_id)
     for issue in issues:
         if issue.issue_status != "open":
             continue
         if issue.investigation_status not in {"not_started", "interrupted"}:
             continue
+        investigation_context = build_investigation_context(
+            issue.id,
+            household_id=household_id,
+        )
+        investigation_domains = (
+            list(dict.fromkeys(item.domain for item in investigation_context.issues))
+            if investigation_context
+            else [issue.domain]
+        )
         queue_issue_investigation(
             issue.id,
             goal=f"Investigate household monitoring issue: {issue.title}.",
-            domains=[issue.domain],
+            domains=investigation_domains[:3],
             executor=executor,
+            investigation_context=investigation_context,
+            household_id=household_id,
         )
     refreshed: list[MonitoringIssueOut] = []
     for issue in issues:
-        current = get_monitoring_issue(issue.id)
+        current = get_monitoring_issue(issue.id, household_id=household_id)
         if current is not None:
             refreshed.append(current)
     return refreshed

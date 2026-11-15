@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Protocol, TypedDict
 
 import httpx
@@ -7,7 +8,12 @@ from langgraph.graph import END, START, StateGraph
 
 from app.config import get_settings
 from app.domain import priority_score
-from app.schemas_agents import Finding, Recommendation, SupervisorDecision
+from app.schemas_agents import (
+    Finding,
+    InvestigationContext,
+    Recommendation,
+    SupervisorDecision,
+)
 from app.services.agent_tools import TOOLSETS
 from app.services.provider_models import (
     FailoverDecisionModel,
@@ -40,6 +46,8 @@ class AgentState(TypedDict):
     status: str
     stop_reason: str | None
     recommendations: list[dict]
+    investigation_context: InvestigationContext | None
+    household_id: str | None
 
 
 class DecisionModel(Protocol):
@@ -90,7 +98,7 @@ def _best_capability_match(goal: str, available: list[str]) -> str | None:
     descriptions = {
         "energy": {"electricity", "energy", "power", "spike", "consumption"},
         "water": {"water", "leak", "shower", "consumption"},
-        "maintenance": {"maintenance", "service", "warranty", "appliance"},
+        "maintenance": {"maintenance", "service", "warranty", "appliance", "appliances"},
         "inventory": {"inventory", "stock", "supplies", "shopping", "reorder"},
     }
     words = {word.strip(".,!?").lower() for word in goal.split()}
@@ -184,10 +192,24 @@ def _finding_for(domain: str, result: dict, finding_index: int) -> Finding:
     )
 
 
+def _call_tool(tool, household_id: str | None) -> dict:
+    try:
+        sig = inspect.signature(tool)
+        if "household_id" in sig.parameters:
+            return tool(household_id=household_id)
+        return tool()
+    except (ValueError, TypeError):
+        try:
+            return tool(household_id=household_id)
+        except TypeError:
+            return tool()
+
+
 def _run_specialist(state: AgentState, domain: str) -> tuple[list[dict], list[dict], int]:
     findings = list(state["findings"])
     trace = list(state["trace"])
     calls = state["specialist_calls"].get(domain, 0)
+    household_id = state.get("household_id")
     for tool in TOOLSETS[domain]:
         if calls >= state["specialist_budget"]:
             trace.append(
@@ -198,7 +220,7 @@ def _run_specialist(state: AgentState, domain: str) -> tuple[list[dict], list[di
                 }
             )
             return findings, trace, calls
-        result = tool()
+        result = _call_tool(tool, household_id)
         calls += 1
         trace.append({"kind": "tool_call", "scope": f"{domain}_specialist", "tool": tool.__name__, "result": result})
         findings.append(_finding_for(domain, result, len(findings)).model_dump())
@@ -268,6 +290,9 @@ def build_agent_graph(decision_model: DecisionModel):
                 "kind": "decision",
                 "decision": decision.model_dump(),
                 "findings_seen": len(state["findings"]),
+                "context_issue_ids": [
+                    item.issue_id for item in (state["investigation_context"].issues if state["investigation_context"] else [])
+                ],
                 "provider": successful_attempt["provider"] if successful_attempt else None,
                 "model": successful_attempt["model"] if successful_attempt else None,
             }
@@ -311,6 +336,8 @@ def build_agent_graph(decision_model: DecisionModel):
             "status": state["status"],
             "recommendations": [item for item in recommendations if not item["suppressed"]],
             "trace": list(state["trace"]) + recommendation_trace,
+            "investigation_context": state["investigation_context"],
+            "household_id": state.get("household_id"),
         }
 
     graph.add_node("supervisor", decide)
@@ -327,7 +354,14 @@ def build_agent_graph(decision_model: DecisionModel):
     return graph.compile()
 
 
-def execute_agent(goal: str, domains: list[str], supervisor_budget: int = SUPERVISOR_BUDGET, specialist_budget: int = SPECIALIST_BUDGET) -> dict:
+def execute_agent(
+    goal: str,
+    domains: list[str],
+    supervisor_budget: int = SUPERVISOR_BUDGET,
+    specialist_budget: int = SPECIALIST_BUDGET,
+    investigation_context: InvestigationContext | None = None,
+    household_id: str | None = None,
+) -> dict:
     state: AgentState = {
         "goal": goal,
         "requested_domains": domains,
@@ -343,5 +377,7 @@ def execute_agent(goal: str, domains: list[str], supervisor_budget: int = SUPERV
         "status": "running",
         "stop_reason": None,
         "recommendations": [],
+        "investigation_context": investigation_context,
+        "household_id": household_id,
     }
     return build_agent_graph(_decision_model()).invoke(state)

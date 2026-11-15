@@ -2,16 +2,39 @@ from datetime import date, timedelta
 from threading import Event
 from uuid import uuid4
 
+import pytest
+from sqlalchemy import delete
+
 from app import clock
 from app.db import initialize_database
-from app.db.models import Appliance, InventoryItem, MonitoringIssue, Reading
+from app.db.models import Appliance, InventoryItem, InventoryLog, MonitoringIssue, Reading
 from app.db.session import SessionLocal
+from app.schemas_monitoring import MonitoringIssueOut
 from app.services import monitoring as monitoring_service
-from app.services.monitoring import evaluate_monitoring, get_monitoring_issue
+from app.services.intelligence import (
+    monitoring_priority_key,
+    recommendation_priority_key,
+)
+from app.services.monitoring import (
+    build_investigation_context,
+    classify_issue_relationship,
+    evaluate_monitoring,
+    get_monitoring_issue,
+)
 from app.services.monitoring import monitor_and_investigate, queue_issue_investigation
 from app.services import monitoring_executor as monitoring_executor_service
 from app.services.monitoring_executor import MonitoringExecutor
 from app.services.monitoring_runtime import MonitoringRuntime
+
+
+@pytest.fixture(autouse=True)
+def isolated_monitoring_database():
+    initialize_database()
+    with SessionLocal() as session:
+        for model in (MonitoringIssue, InventoryLog, InventoryItem, Appliance, Reading):
+            session.execute(delete(model))
+        session.commit()
+    yield
 
 
 def _add_readings(kind: str, values: list[float]) -> None:
@@ -30,6 +53,171 @@ def _add_readings(kind: str, values: list[float]) -> None:
                 )
             )
         session.commit()
+
+
+def _issue_context(
+    issue_id: str,
+    domain: str,
+    *,
+    entity_id: int | None = None,
+) -> MonitoringIssueOut:
+    now = clock.now()
+    return MonitoringIssueOut(
+        id=issue_id,
+        fingerprint=f"{domain}:{issue_id}",
+        issue_type="test_issue",
+        domain=domain,
+        entity_id=entity_id,
+        title=issue_id,
+        issue_status="open",
+        first_trigger_source="manual",
+        last_trigger_source="manual",
+        first_detected_at=now,
+        last_detected_at=now,
+        resolved_at=None,
+        occurrence_count=1,
+        latest_evidence_id=None,
+        details={},
+        investigation_id=None,
+        investigation_status="not_started",
+        active_run_id=None,
+        latest_run_id=None,
+        claimed_at=None,
+        started_at=None,
+        completed_at=None,
+        last_error=None,
+    )
+
+
+def test_issue_relationships_are_deterministic_and_llm_independent():
+    energy = _issue_context("energy-issue", "energy")
+    maintenance = _issue_context("maintenance-issue", "maintenance")
+    inventory = _issue_context("inventory-issue", "inventory")
+    same_entity = _issue_context("same-entity", "maintenance", entity_id=7)
+    related_entity = _issue_context("related-entity", "energy", entity_id=7)
+
+    assert classify_issue_relationship(energy, maintenance).relationship == "plausible"
+    assert classify_issue_relationship(energy, inventory).relationship == "unrelated"
+    assert classify_issue_relationship(same_entity, related_entity).relationship == "confirmed"
+
+
+def test_confirmed_lower_severity_outranks_evidence_limited_high_severity():
+    confirmed = _issue_context("confirmed", "inventory")
+    confirmed.issue_type = "low_stock"
+    confirmed.details = {"quantity": 0, "reorder_threshold": 2}
+    limited = _issue_context("limited", "energy")
+    limited.issue_type = "consumption_anomaly"
+    limited.details = {"anomaly": {"insufficient_data": True}}
+
+    assert monitoring_priority_key(confirmed) > monitoring_priority_key(limited)
+
+
+def test_monitoring_priority_uses_each_factor_lexicographically():
+    confirmed = _issue_context("confirmed", "inventory")
+    confirmed.issue_type = "low_stock"
+    confirmed.details = {"quantity": 0, "reorder_threshold": 2}
+    less_urgent = _issue_context("less-urgent", "maintenance")
+    less_urgent.issue_type = "warranty_expiring"
+    less_urgent.details = {"warranty": {"status": "expiring_soon"}}
+
+    assert monitoring_priority_key(confirmed) > monitoring_priority_key(less_urgent)
+
+
+def test_recommendation_priority_separates_status_and_evidence():
+    issue = _issue_context("source", "energy")
+    issue.issue_type = "consumption_anomaly"
+    issue.details = {"anomaly": {"flagged": True, "percent_change": 60}}
+    finding = {
+        "id": "finding-1",
+        "severity": "high",
+        "confidence": 0.9,
+        "evidence": [{"reading_id": 1}],
+    }
+    active = {
+        "finding_ids": ["finding-1"],
+        "suggested_action": "Review the latest reading.",
+    }
+    suppressed = {**active, "suppressed": True}
+
+    assert recommendation_priority_key(
+        active, [finding], issue, recommendation_id="active"
+    ) > recommendation_priority_key(
+        suppressed, [finding], issue, recommendation_id="suppressed"
+    )
+
+
+def test_investigation_context_contains_only_deterministically_related_issues():
+    initialize_database()
+    _add_readings("electricity", [1, 1, 1, 1, 4])
+    with SessionLocal() as session:
+        appliance = Appliance(
+            name="Related appliance",
+            category="kitchen",
+            last_service_date=date(2024, 1, 1),
+            service_interval_days=30,
+            created_at=clock.now(),
+        )
+        inventory = InventoryItem(
+            name="Unrelated stock",
+            quantity=1,
+            unit="unit",
+            reorder_threshold=2,
+            created_at=clock.now(),
+        )
+        session.add_all([appliance, inventory])
+        session.commit()
+
+    issues = evaluate_monitoring("manual", ["energy", "maintenance", "inventory"])
+    primary = next(item for item in issues if item.fingerprint == "energy:anomaly")
+    context = build_investigation_context(primary.id)
+    assert context is not None
+    assert context.primary_issue_id == primary.id
+    assert context.issues[0].relationship == "primary"
+    assert all(item.relationship == "plausible" for item in context.issues[1:])
+    assert all(item.domain in {"energy", "maintenance"} for item in context.issues)
+
+
+def test_monitoring_submission_includes_bounded_related_domains():
+    initialize_database()
+    _add_readings("electricity", [1, 1, 1, 1, 4])
+    with SessionLocal() as session:
+        session.add(
+            Appliance(
+                name="Context appliance",
+                category="kitchen",
+                last_service_date=date(2024, 1, 1),
+                service_interval_days=30,
+                created_at=clock.now(),
+            )
+        )
+        session.commit()
+    energy_issue = next(
+        item for item in evaluate_monitoring("manual", ["energy"])
+        if item.fingerprint == "energy:anomaly"
+    )
+    with SessionLocal() as session:
+        persisted_energy = session.get(MonitoringIssue, energy_issue.id)
+        persisted_energy.investigation_status = "not_started"
+        session.commit()
+
+    calls = []
+
+    class CapturingExecutor:
+        def submit(self, issue_id, investigation_id, goal, domains, *, investigation_context=None):
+            calls.append((issue_id, domains, investigation_context))
+            return True
+
+    monitor_and_investigate(
+        "manual",
+        domains=["energy", "maintenance"],
+        executor=CapturingExecutor(),
+    )
+    energy_call = next(
+        call
+        for call in calls
+        if call[2] and call[2].primary_issue_id == energy_issue.id
+    )
+    assert energy_call[1] == ["energy", "maintenance"]
 
 
 def test_energy_uses_stable_domain_fingerprint_and_latest_evidence():
@@ -300,7 +488,9 @@ def test_scheduled_check_recovers_before_evaluating_and_protects_active_work(mon
         lambda *args, **kwargs: events.append("evaluate"),
     )
     runtime.run_scheduled_check()
-    assert events == ["in_flight", ("recover", {"active-investigation"}), "evaluate"]
+    assert events[:2] == ["in_flight", ("recover", {"active-investigation"})]
+    assert events[2:]
+    assert all(event == "evaluate" for event in events[2:])
 
 
 def test_worker_initialization_failure_does_not_leave_issue_queued(monkeypatch):

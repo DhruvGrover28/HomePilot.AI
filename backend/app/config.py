@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     monitoring_max_workers: int = 2
     monitoring_max_pending_jobs: int = 4
     monitoring_claim_timeout_minutes: int = 30
+    session_cookie_secure: bool = False
 
     model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", extra="ignore")
 

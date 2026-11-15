@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import select
 
 from app.config import get_settings
+from app.db.models import Household
+from app.db.session import SessionLocal
 from app.services.monitoring import monitor_and_investigate
 from app.services.monitoring_executor import (
     MonitoringExecutor,
@@ -55,17 +58,39 @@ class MonitoringRuntime:
             settings.monitoring_claim_timeout_minutes,
             self._executor.in_flight_investigation_ids(),
         )
-        monitor_and_investigate("scheduled", domains=None, executor=self._executor)
+        with SessionLocal() as session:
+            household_ids = session.scalars(select(Household.id)).all()
+        for household_id in household_ids:
+            monitor_and_investigate(
+                "scheduled",
+                domains=None,
+                executor=self._executor,
+                household_id=household_id,
+            )
 
-    def trigger_event(self, domains: list[str]) -> None:
+    def trigger_event(self, domains: list[str], household_id: str | None = None) -> None:
         if self._executor is None:
             return
-        monitor_and_investigate("event", domains=domains, executor=self._executor)
+        monitor_and_investigate(
+            "event",
+            domains=domains,
+            executor=self._executor,
+            household_id=household_id,
+        )
 
-    def trigger_manual(self, domains: list[str] | None = None) -> list:
+    def trigger_manual(
+        self,
+        domains: list[str] | None = None,
+        household_id: str | None = None,
+    ) -> list:
         if self._executor is None:
             raise RuntimeError("Monitoring runtime is not started.")
-        return monitor_and_investigate("manual", domains=domains, executor=self._executor)
+        return monitor_and_investigate(
+            "manual",
+            domains=domains,
+            executor=self._executor,
+            household_id=household_id,
+        )
 
 
 monitoring_runtime = MonitoringRuntime()
