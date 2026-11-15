@@ -23,7 +23,7 @@ _CUSTOM_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "households": [
         ("timezone", "VARCHAR(50) DEFAULT 'UTC'"),
         ("preferred_units", "VARCHAR(20) DEFAULT 'metric'"),
-        ("onboarding_completed", "BOOLEAN DEFAULT 0"),
+        ("onboarding_completed", "BOOLEAN DEFAULT FALSE"),
     ],
 }
 

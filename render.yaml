@@ -10,9 +10,7 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: homepilot-db
-          property: connectionString
+        sync: false
       - key: HOMEPILOT_ENV
         value: production
       - key: HOMEPILOT_ALLOW_DEV_FALLBACK
@@ -47,11 +45,3 @@ services:
           type: web
           name: homepilot-api
           property: host
-
-databases:
-  # Managed PostgreSQL Database Resource
-  - name: homepilot-db
-    plan: free
-    region: oregon
-    databaseName: homepilot
-    user: homepilot

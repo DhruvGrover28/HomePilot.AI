@@ -18,6 +18,14 @@ def _normalize_db_url(url: str) -> str:
 
 settings = get_settings()
 db_url = _normalize_db_url(settings.database_url)
-connect_args = {"check_same_thread": False} if db_url.startswith("sqlite") else {}
-engine = create_engine(db_url, connect_args=connect_args)
+is_sqlite = db_url.startswith("sqlite")
+connect_args = {"check_same_thread": False} if is_sqlite else {}
+engine_kwargs = {
+    "connect_args": connect_args,
+    "pool_pre_ping": True,
+}
+if not is_sqlite:
+    engine_kwargs["pool_recycle"] = 300
+
+engine = create_engine(db_url, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
