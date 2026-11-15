@@ -29,18 +29,17 @@ services:
         value: "true"
 
   # HomePilot React / Vite Frontend Static Site
-  - type: static
+  - type: web
     name: homepilot-web
-    plan: free
-    region: oregon
-    buildCommand: cd frontend && npm install && npm run build
+    runtime: static
+    buildCommand: cd frontend && npm install && VITE_API_BASE_URL="https://${API_HOST}" npm run build
     staticPublishPath: ./frontend/dist
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
-      - key: VITE_API_BASE_URL
+      - key: API_HOST
         fromService:
           type: web
           name: homepilot-api
